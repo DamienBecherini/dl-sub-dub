@@ -1,6 +1,6 @@
 """Translations of the messages (log, errors, command line) and of the web interface.
 
-One file per language in `locales/` (<code>.json): stable keys ("batch.paused") to the text, with named parameters
+One file per language in `locales/` (<code>.json): stable keys ("project.paused") to the text, with named parameters
 in braces ("{n} videos"). A text that depends on a number is an object with one entry per plural form (CLDR
 categories: one, few, many, other…), chosen from the parameter `n`. A key missing from a language falls back to
 English, then to the key itself. Adding a language: copy en.json under its code and translate the values.
@@ -117,6 +117,15 @@ def t(key: str, **params) -> str:
         text = _text(FALLBACK, key, params.get("n"))
     if text is None:
         return key
+    return _PARAM.sub(lambda m: str(params[m.group(1)]) if m.group(1) in params else m.group(0), text)
+
+
+def text_in(code: str, key: str, **params) -> str:
+    """A text in the language `code` rather than the active one (the title of a track in its own language); in the
+    fallback language when there is no catalog for it."""
+    text = _text(code, key, params.get("n")) if code in available() else None
+    if text is None:
+        text = _text(FALLBACK, key, params.get("n")) or key
     return _PARAM.sub(lambda m: str(params[m.group(1)]) if m.group(1) in params else m.group(0), text)
 
 

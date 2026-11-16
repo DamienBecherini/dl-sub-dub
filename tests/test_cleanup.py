@@ -84,9 +84,32 @@ def test_language_names_and_codes():
     assert "zz" in language.name("zz")
     assert language.normalize_codes("fr, EN;de fr") == ["fr", "en", "de"]
     assert language.normalize_codes(["", " It "]) == ["it"]
+    assert language.normalize_codes([["es", "de"], "pt-BR"]) == ["es", "de", "pt-br"]           # a list inside the list
+    assert language.normalize_codes(["['en']", "[\'[\'en\']\']"]) == []                       # a list turned into text: left out
 
 
 def test_instructions_per_language():
     assert "Tu traduis en français." in translation.instructions("fr")
     assert "Tu traduis en allemand." in translation.instructions("de")
     assert "{langue}" not in translation.instructions("pl")
+
+
+def test_what_a_stopped_dubbing_left_is_cleaned(tmp_path):
+    """Stopped: the temporary folder of each language goes (of no use to a resume), the separated voice stays (a
+    resume takes it again); "Clean now" takes the separated voice too. The dubbed voices made are kept."""
+    work = tmp_path / ".work" / "video"
+    for name in ("dubbing/de.m4a", "dubbing/temp-es/extract.wav", "dubbing/temp-es/demucs/htdemucs/extract/vocals.wav",
+                 "dubbing/temp-en/refs/sentence.wav", "dubbing/separation/vocals.wav", "dubbing/separation/no_vocals.wav",
+                 "transcription.json"):
+        (work / name).parent.mkdir(parents=True, exist_ok=True)
+        (work / name).write_bytes(b"x" * 10)
+    left = lambda: sorted(p.relative_to(work).as_posix() for p in work.rglob("*") if p.is_file())  # noqa: E731
+    assert len(cleanup.dubbing_leftovers(work)) == 3 and len(cleanup.dubbing_leftovers(work, resumable=True)) == 5
+    assert cleanup.summary(tmp_path / ".work")["audio"] == {"files": 5, "bytes": 50}          # what "Clean now" would free
+    assert cleanup.clean_stopped_dubbing(work) == (3, 30)
+    assert left() == ["dubbing/de.m4a", "dubbing/separation/no_vocals.wav", "dubbing/separation/vocals.wav", "transcription.json"]
+    assert not (work / "dubbing" / "temp-es").exists()                                          # the empty folders too
+    assert cleanup.clean_folder(work, cleanup.DEFAULTS) == (0, 0)                              # the end of a task: kept for a resume
+    deleted = cleanup.clean_all(tmp_path / ".work", cleanup.DEFAULTS)
+    assert deleted["audio"] == {"files": 2, "bytes": 20}
+    assert left() == ["dubbing/de.m4a", "transcription.json"]

@@ -7,57 +7,139 @@
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org)
 [![No dependencies](https://img.shields.io/badge/dependencies-standard%20library%20only-2EA043)](pyproject.toml)
 [![FFmpeg](https://img.shields.io/badge/FFmpeg-required-007808?logo=ffmpeg&logoColor=white)](https://ffmpeg.org)
-[![Output SRT / VTT](https://img.shields.io/badge/output-SRT%20%2F%20VTT-0A7EA4)](#what-it-does)
-[![Translation](https://img.shields.io/badge/translation-local%20LLM%20%7C%20Claude%20%7C%20OpenAI--compatible-D97757)](#how-it-works)
+[![Output SRT / VTT](https://img.shields.io/badge/output-SRT%20%2F%20VTT-0A7EA4)](#use)
+[![Translation](https://img.shields.io/badge/translation-local%20LLM%20%7C%20Claude%20%7C%20OpenAI--compatible-D97757)](#connect-the-engines)
 [![Transcription server](https://img.shields.io/badge/transcription-transcription--handy--like-BC52EE)](https://github.com/DamienBecherini/transcription-handy-like)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-**English** · [Français](README.fr.md)
+**English** · [Français](README.fr.md) · [Reference](docs/reference.md) · [How the code fits together](docs/code.md) · [Security](SECURITY.md)
 
 </div>
 
 ---
 
-Downloads an online video or playlist (tested with YouTube, Dailymotion, PeerTube and Arte; other [sites yt-dlp supports](https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md) may work, except those that require an account), or takes a video file or a folder, and subtitles it in its own language and in the languages you want. You bring the transcription server; translation runs on a local LLM, the Claude API, any OpenAI-compatible API, or not at all. Output is `.srt` and `.vtt` files timed on the actual speech. Optionally, it dubs the video in a translated language with the original voice cloned (graphics card needed) and puts it all in an MKV.
+The tool runs on your machine, with the engines you choose:
 
-![A folder of videos subtitled in a batch: progress, steps and live log](docs/images/en/batch-running-dark.png)
+- **Sources**: an online video or playlist (tested with YouTube, Dailymotion, PeerTube and Arte; other [sites yt-dlp supports](https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md) may work, except those that require an account), a video file or a whole folder.
+- **Transcription**: by a server that you run; we recommend [transcription-handy-like](https://github.com/DamienBecherini/transcription-handy-like).
+- **Translation**: by a local LLM, the Claude API or any OpenAI-compatible API. Without a translator, only the subtitles in the spoken language are made.
+- **Output**: `.srt` and `.vtt` files next to the video, which players load on their own.
+- **Dubbing, optional**: the original voice cloned in the translated languages, all gathered in an MKV. Tried on an NVIDIA graphics card (advised) and on the processor alone, which works but about 30 times slower; an Apple Silicon Mac or an AMD card should do, without having been tried ([the detail](#dubbing)). The voice model used (OmniVoice) is under **CC BY-NC: non-commercial use only**.
+- **Four ways to use it**: [the local web page](#the-page), [the command line](#the-command-line), [an AI assistant (MCP)](#an-ai-assistant-mcp), or [the API](#the-api) for your own scripts.
 
-## What it does
+![The page: each video with its boxes for the steps, its state in each one, its own settings and its log](docs/images/en/workshop-dark.png)
 
-- **One video, a playlist or a whole folder.** A folder becomes a batch you can pause, stop at once (the video in progress starts again later from what it finished), resume after a power cut, and retry video by video. A playlist is downloaded into a folder of its own, then processed the same way.
-- **Cost before spending.** With a paid translator, the batch stops after transcription and shows the estimated tokens and price for each model.
-- **No retyped work.** Each step is skipped when its result already exists: changing a language or the layout does not transcribe again.
-- **Web page or command line.** The page shows steps, live log and remaining time. It runs on your machine and listens on `127.0.0.1` only.
-- **Subtitles only, or dubbing too.** Choose at the start. Check one episode end to end before running the rest of a batch, and validate AI-corrected names before translating.
+## Why
+
+A course on YouTube, a series on a disk, a playlist of talks: to watch them in another language, you need the video, its words timed on the voice, a translation that keeps those timings, and files the player loads by itself. Online services do it, but they take the whole video away, bill by the minute and seldom show the cost first. By hand, it is yt-dlp, a transcription server, a translator, then drifting timings to fix.
+
+It started with English talks I wanted to watch with friends who don't speak English. The subtitles and the dubbing stay on your machine: for private use, with videos you have the right to watch, without publishing them again.
+
+dl-sub-dub chains these steps on your machine, and shows the cost before anything is spent.
+
+## The four steps
+
+```mermaid
+flowchart TB
+  subgraph s1["1. Select"]
+    add["Addresses, playlists,<br/>files, folders,<br/>.txt lists"]
+  end
+  subgraph s2["2. Download"]
+    dl["yt-dlp<br/>(addresses only)"]
+  end
+  subgraph s3["3. Subtitles"]
+    direction LR
+    tr["Transcription<br/>(your server)"] --> rev["AI review<br/>of the names<br/>(optional)"] --> val["Validation<br/>by you"] --> tl["Translation<br/>(cost shown first,<br/>when it is paid)"]
+  end
+  subgraph s4["4. Dubbing (optional)"]
+    direction LR
+    sep["Voice separated<br/>from the background<br/>(demucs)"] --> spk["Who speaks?<br/>speaker recognition<br/>(WavLM)"] --> dub["Voice cloned,<br/>sentence by sentence<br/>(OmniVoice)"] --> mkv["Mixing, then MKV<br/>with every track"]
+  end
+  s1 -->|"address"| s2
+  s1 -->|"file"| s3
+  s2 --> s3
+  s3 --> s4
+```
+
+1. **Select.** Paste addresses, give a folder, drop a `.txt` list: everything lands in one list, which you tick.
+2. **Download.** For each address, you see what the site offers (qualities, audio tracks, subtitles) and you choose. A track can be added later without downloading the video again.
+3. **Subtitles.** The words come back from the transcription server with their own timings: the subtitles are laid on the voice, not guessed. They are translated without the timings changing.
+4. **Dubbing.** The voice is separated from the background, cloned sentence by sentence in each language, then mixed back. An MKV gathers the video, every voice and every subtitle.
+
+Each video can also run its steps on its own, and have its own settings (languages, quality, engines).
 
 ## Screenshots
 
-| Choose the engines and the languages | Pick the videos of a folder |
+| The project: a video of the web (what its site offers) and two files already subtitled | Settings by categories: here, what a new project starts with |
 |---|---|
-| [![Home page](docs/images/en/home-light.png)](docs/images/en/home-light.png) | [![Folder inventory](docs/images/en/folder-dark.png)](docs/images/en/folder-dark.png) |
-| **Batch done: one file per language** | **The result, here in French** |
-| [![Batch done](docs/images/en/batch-done-dark.png)](docs/images/en/batch-done-dark.png) | [![Video with French subtitles](docs/images/en/result-fr.png)](docs/images/en/result-fr.png) |
+| [![The page](docs/images/en/workshop-dark.png)](docs/images/en/workshop-dark.png) | [![Settings page](docs/images/en/settings-light.png)](docs/images/en/settings-light.png) |
+| **The result, here in French** | **The same project on a phone** |
+| [![Video with French subtitles](docs/images/en/result-fr.png)](docs/images/en/result-fr.png) | [<img src="docs/images/en/workshop-phone-dark.png" alt="The page on a phone: each video as a card" width="300">](docs/images/en/workshop-phone-dark.png) |
 
-The demo videos are made on the spot (Windows speech synthesis, `docs/demo/videos_demo.py`): an English narration,
+The demo videos are made on the spot (Windows speech synthesis over [Unsplash photos](docs/demo/backgrounds/CREDITS.md), `docs/demo/videos_demo.py`): an English narration,
 transcribed by [transcription-handy-like](https://github.com/DamienBecherini/transcription-handy-like) and translated
-into French and Spanish by a local LLM (Qwen3.6 with llama.cpp), at no cost.
+into French and Spanish by a local LLM (Qwen3.6 with llama.cpp), at no cost. The WEB line of the screenshot is a public
+YouTube video: only its information is read, nothing is downloaded.
 
-## Quick start
+## What you need
 
-**With an AI coding agent.** Open Claude Code, Codex, Cursor or another agent on the machine that will make the subtitles, and paste:
+| Piece | Needed? | What we recommend |
+|---|---|---|
+| Python 3.11 or later, `ffmpeg` and `ffprobe` | Yes | No other Python dependency: the service uses the standard library only. |
+| `yt-dlp` | For addresses only | For YouTube, a recent JavaScript runtime (Deno, or Node 22 or later). |
+| A transcription server | Yes | **Option 1 (recommended)**: [transcription-handy-like](https://github.com/DamienBecherini/transcription-handy-like). Three commands with Docker, no graphics card needed, and it listens on the address expected here by default.<br>**Option 2**: any other OpenAI-compatible server that returns the words with their timings ([contract](docs/reference.md#transcription-server-the-contract)). |
+| A translator | No | A local model (llama.cpp, Ollama, LM Studio…): free and private, slower. Or an API (Claude, or OpenAI-compatible): fast, paid, and the text of the subtitles goes to the provider. |
+| The dubbing | No | A Python environment of its own, and preferably an NVIDIA graphics card (about 4.3 GB of video memory for the voice model; tested on an 8 GB card). Other hardware is possible but [not all tried](#dubbing). Voice model under a non-commercial licence (CC BY-NC). |
+
+What to expect, measured on the test machine:
+
+| What | Measure |
+|---|---|
+| Transcription (transcription-handy-like, processor only) | About 16 times real time on a recent laptop (Core Ultra 9 285H), 7 times on a small home server (4th-generation Core i5). |
+| Translation by a local model | Qwen3.6-35B-A3B Q4 with llama.cpp, on an 8 GB RTX 5070 Laptop and 32 GB of RAM: about 34 tokens/s; 11 subtitles in about 20 s. |
+| **One hour of video in French, subtitled then translated into English by the Claude API** (Sonnet) | 7 min 27 in all on the laptop: 3 min 44 of transcription, 3 min 32 of translation for 1,410 subtitles. 63,177 input tokens and 25,619 output tokens, that is **about $0.38** at the prices recorded in the tool (the estimate shown beforehand said $0.43). |
+| Dubbing | About 8 min 30 for 30 min of video (Core Ultra 9 285H laptop, 8 GB RTX 5070). On the processor alone: about 30 times slower (18 min for 38 s of video). Mac and AMD cards: not measured. |
+| Translation and dubbing on the same 8 GB card | They do not fit together: the translation model takes 6.1 GB, and the card is full (a peak of 7.9 GB) as soon as the dubbing is added. The tool then runs one AI at a time. |
+
+## Languages handled
+
+They depend on the engines you connect, not on the tool:
+
+| Step | With the recommended engines | Good to know |
+|---|---|---|
+| Transcription | Parakeet Ultra, the model of transcription-handy-like: 25 European languages. | Another server (Whisper…) brings others. |
+| Translation | Those your model knows: very wide with Claude or a large local model. | Quality varies with the pair of languages and the model. |
+| Dubbing | OmniVoice lists more than 600 languages on its card. | We tried French and English only. |
+
+The page offers seven languages as boxes (French, English, German, Spanish, Italian, Portuguese, Dutch); any other is typed by its code (`pl`, `ru`…).
+
+## Install
+
+### With an AI coding agent
+
+Open Claude Code, Codex, Cursor or another agent on the machine that will make the subtitles, and paste:
 
 ```
 Install and configure dl-sub-dub from https://github.com/DamienBecherini/dl-sub-dub on this machine.
 Follow its AGENTS.md. Ask me before anything that needs a password or administrator rights.
 ```
 
-It checks Python, `ffmpeg` and `yt-dlp`, looks for a transcription server already running (or offers to set up [transcription-handy-like](https://github.com/DamienBecherini/transcription-handy-like) with Docker), measures the machine (processor, memory, graphics card), then asks you which languages you want and recommends how to translate: not at all, with a local model suited to your hardware, or with a paid API. It writes the settings with you, keys as references only, then tests each engine. [AGENTS.md](AGENTS.md) is the procedure it follows. An agent runs commands on your machine: read what it proposes before you accept.
+It follows [AGENTS.md](AGENTS.md):
 
-**Or by hand.**
+1. it checks Python, `ffmpeg` and `yt-dlp`;
+2. it looks for a transcription server already running, or offers to set up transcription-handy-like with Docker;
+3. it measures the machine (processor, memory, graphics card);
+4. it asks you which languages you want and recommends how to translate, from your hardware;
+5. it writes the settings with you (keys as references only), then tests each engine;
+6. if the machine has an NVIDIA graphics card, it offers to install the dubbing, telling you first what it downloads and under which licences.
 
-**1. Start a transcription server.** This tool sends the audio to a server you run. Use **[transcription-handy-like](https://github.com/DamienBecherini/transcription-handy-like)**: its [quick start](https://github.com/DamienBecherini/transcription-handy-like#quick-start-on-your-computer) takes three commands with Docker, and it listens on the address expected here by default.
+An agent runs commands on your machine: read what it proposes before you accept.
 
-**2. Install this tool.** You need Python 3.11 or later, and `ffmpeg` and `ffprobe` in the `PATH`. `yt-dlp` is needed for video addresses only.
+### By hand
+
+**1. Start a transcription server.** The [quick start of transcription-handy-like](https://github.com/DamienBecherini/transcription-handy-like#quick-start-on-your-computer) takes three commands with Docker.
+
+**2. Install the tool.**
 
 ```
 git clone https://github.com/DamienBecherini/dl-sub-dub.git
@@ -67,100 +149,133 @@ python -m venv .venv
 .venv/bin/python -m subtitles.web --open
 ```
 
-**3. Check the connection.** On the page, open **Settings**, then click **Test** next to the transcription server. If your server is on another machine or uses an API key, change its address and key there.
+On Windows, in every command of this page, `.venv/bin/python` is written `.venv/Scripts/python`.
 
-**4. Make subtitles.** Paste a video address (YouTube, Dailymotion, PeerTube, Arte…) or a file path, then click **Démarrer**. The `.srt` file appears next to the video.
+**3. Check the connection.** On the page, open the **Settings** (the gear at the top right), **Transcription**, then click **Test** next to the server.
 
-To translate, add a translator in **Settings**. For the Claude API, first run `.venv/bin/pip install ".[claude]"`.
+**4. Make your first subtitles.** Paste a video address or a file path, click **Add**, then **Run** at the bottom. The `.srt` file appears next to the video.
 
-## Transcription server requirements
+### Uninstall
 
-Any server can be used if it meets this contract. The tool needs an OpenAI-compatible server that returns **word timestamps**: `POST /v1/audio/transcriptions` with `response_format=verbose_json` and `timestamp_granularities[]=word`, answering `words: [{"word", "start", "end"}]` on the recording's timeline. A server that only returns segments is refused with a clear message. A `/health` route is optional.
+1. Stop the service, then delete the install folder (it holds the `.venv` environment).
+2. Delete the settings folder: `%LOCALAPPDATA%\subtitles` on Windows, `~/.config/subtitles` elsewhere (settings, history, measured speeds, thumbnails).
+3. Delete the working folder `.work` of the output folder (by default `~/Videos/subtitles`).
+4. In the folders of your projects, `dl-sub-dub.project.json` and `subtitles.glossary.json` can go. The videos, the `.srt`, the `.vtt` and the MKV are yours: nothing deletes them.
+5. If you had installed the dubbing: its Python environment, and the models downloaded into `~/.cache/huggingface/hub` (OmniVoice, about 3 GB; WavLM) and `~/.cache/torch/hub` (demucs).
+6. The transcription server is removed on its own (`docker compose down` in its folder, see its README), and a declared MCP server is removed in your assistant (`claude mcp remove dl-sub-dub`).
 
-Tested with [transcription-handy-like](https://github.com/DamienBecherini/transcription-handy-like) (recommended) and the Docker image `hwdsl2/whisper-server`.
+### Update
+
+```
+git pull
+.venv/bin/pip install .             # pip copies the code into the environment: run it again after each git pull
+```
+
+## Connect the engines
+
+Everything is set in the **Settings** of the page; each engine has a **Test** button, and a **?** explains each field.
+
+### Transcription
+
+In **Settings › Transcription**, give the address of the server (by default `http://127.0.0.1:8000`, that of transcription-handy-like) and its key if it asks for one. You can declare several, for instance one on a home server and one on this computer, and choose the default one.
+
+### Translation
+
+In **Settings › Translation**, add a translator:
+
+| Translator | Type | Address | Good to know |
+|---|---|---|---|
+| Local model with llama.cpp | `openai` | `http://127.0.0.1:8080` | The base address, without `/v1`. |
+| Local model with Ollama | `openai` | `http://127.0.0.1:11434` | The model is unloaded before a dubbing. |
+| Claude API | `claude` | (none) | First run `.venv/bin/pip install ".[claude]"`. Paid: the project stops after the transcription to show the cost. |
+| Another OpenAI-compatible API (OpenAI, Mistral, Groq…) | `openai` | The provider's | Paid, same pause before the translation. |
+
+[AGENTS.md](AGENTS.md) has a table to choose a local model from the graphics card and the memory.
+
+### API keys
+
+They are never typed in nor shown: the key field holds a reference, and a plain value is refused when saving.
+
+| Reference | Meaning |
+|---|---|
+| `env:<NAME>` | An environment variable. |
+| `file:<path>` | A file containing the key, outside the repository. |
+| `sops:<file>#<NAME>` | Decrypted when used, if sops is installed. |
+
+### Dubbing
+
+The dubbing runs in a Python environment of its own:
+
+```
+python3 -m venv ~/dl-sub-dub-dubbing/.venv
+~/dl-sub-dub-dubbing/.venv/bin/pip install omnivoice demucs soundfile num2words
+```
+
+The tool chooses by itself where to compute: an NVIDIA graphics card if there is one, otherwise the chip of an Apple Silicon Mac, otherwise the processor (setting **Computing device**, in Settings › Dubbing). We could not try everything:
+
+| Hardware | What to do | Status |
+|---|---|---|
+| NVIDIA card, on Windows | Install the environment **inside WSL 2** (the Linux built into Windows), with the two commands above. | **Tried**: 36 s for a video of 38 s; 8 min 30 for 30 min. |
+| NVIDIA card, on Linux | The two commands above. | Tried through WSL 2, which is a real Linux; not on a standalone Linux. |
+| Processor alone (no card) | Nothing more. | **Tried: it works, but about 30 times slower** (18 min for the same video of 38 s, on a Core Ultra 9 285H). For a trial, not for a series. |
+| Apple Silicon Mac | Nothing more: PyTorch uses the Apple chip (MPS). | **Not tried.** The voice engine provides for it; the service itself was not tried on macOS either. |
+| AMD card, on Linux | Install the PyTorch build for ROCm instead of the default one, then choose "Graphics card (CUDA)". | **Not tried.** |
+| NVIDIA card, on Windows without WSL | First install PyTorch with CUDA from the PyTorch index (on Windows, `pip install torch` alone gives a build without the graphics card). | **Not tried.** |
+| AMD or Intel card, on Windows | No simple way that we know of: the processor remains. | Not tried. |
+
+**Did you try one of these, or another?** Tell us how it goes by [opening an issue](https://github.com/DamienBecherini/dl-sub-dub/issues/new?template=dubbing-hardware.md) (a free GitHub account is enough): the machine, the system, the time for a short video, the error message if any. We will update this table.
+
+Then, in **Settings › Dubbing**: turn it on, give the command (the Python of that environment) and the model (`k2-fsa/OmniVoice`, downloaded on the first dubbing, about 3 GB). If the environment is inside WSL, the command is `wsl -d <distribution> -- <path>/.venv/bin/python`, and you tick WSL.
+
+- **Licences.** The code of [OmniVoice](https://github.com/k2-fsa/OmniVoice) is under Apache 2.0, but its pre-trained model is under **CC BY-NC: non-commercial use**. Its audio tokenizer is under the Boson Higgs Audio 2 Community License.
+- **Your rights.** Only clone a voice and dub content you have the right to use.
+- **A translation model on the same card.** **Check the graphics card**, in the settings of a project, measures whether both fit together; otherwise the tool frees the card before the dubbing ([details](docs/reference.md#a-translation-model-on-the-same-graphics-card)).
 
 ## Use
 
+### The page
+
 ```
-.venv/bin/python -m subtitles.web --open        # web page on http://127.0.0.1:4420/
+.venv/bin/python -m subtitles.web --open   # http://127.0.0.1:4420/
+```
+
+Add videos, tick the languages, click **Run**. The rest is found on the spot: each setting has a **?** that explains it, and each state icon says what it means on hover or on a tap. Each video also has its button and its **▾** menu, to run one or several of its steps without touching the others.
+
+### The command line
+
+```
 .venv/bin/python -m subtitles "https://www.youtube.com/watch?v=..."
-.venv/bin/python -m subtitles "https://www.youtube.com/playlist?list=..."   # the whole playlist, as a batch
 .venv/bin/python -m subtitles "my video.mp4" --languages fr,de
-.venv/bin/python -m subtitles "D:/Series/Season 1"      # every video in the folder, as a batch
-.venv/bin/python -m subtitles --list              # configured engines
+.venv/bin/python -m subtitles "D:/Series/Season 1"                      # a whole folder, resumed after an interruption
+.venv/bin/python -m subtitles "https://youtu.be/..." "D:/Series/Season 1" --stages dl,sub,dub   # the steps of the page
 ```
 
-Command line options: `--output-dir`, `--language en` (spoken language), `--languages fr,de` (target languages), `--transcription <id>`, `--translator <id>`, `--redo`, `--no-cleanup`, `--lang en` (language of the messages).
+Every option is in the [reference](docs/reference.md#command-line).
 
-A folder becomes a batch, the same as in the web page: `subtitles.batch.json` records its progress, and running the same command after an interruption (Ctrl+C, power cut) resumes it. Finished videos are skipped and the others reuse their saved transcription. The command does not pause before translation. Batch options: `--until translation|dubbing|mux` (last step, translation by default), `--new-batch` (ignore the existing batch file and list the folder again), `--no-subfolders`. You can also pass a `.batch.json` file. The exit code is 0 when every video is done, 1 otherwise. Don't run the same batch in the web page at the same time.
+### An AI assistant (MCP)
 
-A playlist address (a YouTube playlist or channel, a PeerTube channel…) is downloaded into a folder named after it, in the download folder, with the videos numbered in the order of the list (`001 - title.mp4`); this folder is then processed as a batch. A video that cannot be downloaded (private, removed) is skipped and reported, and running the command again resumes the download. The address of a video inside a playlist (`watch?v=…&list=…`) processes that video alone, or the whole list with `--playlist`. On the page, the preview of the address offers **Download the playlist**, then the folder opens as any source folder.
+An assistant without a terminal (Claude Desktop, Claude Code, a voice assistant…) can drive dl-sub-dub through
+[MCP](https://modelcontextprotocol.io): *"subtitle and dub episode 9"*, *"where is my project?"*. The MCP server is a thin
+layer over the API below, standard library only; the web service must run, and the page and the assistant see the same
+projects.
 
-The 🎨 button chooses the mode (system, light or dark) and a palette for each mode: five light ones and four dark ones, three of them without blue light; the sun / moon button switches the mode. Remembered in the browser.
+```
+.venv/bin/python -m subtitles.mcp_server        # stdio; Windows: .venv/Scripts/python -m subtitles.mcp_server
+claude mcp add dl-sub-dub -- <install folder>/.venv/bin/python -m subtitles.mcp_server     # Claude Code
+```
 
-Once a piece of work is started, the settings of the page fold into one line (**Edit** unfolds them); they unfold by themselves as soon as a new video, folder or address is given.
+For Claude Desktop, the same command in `claude_desktop_config.json` (`"command"`: the Python of `.venv`, `"args"`:
+`["-m", "subtitles.mcp_server"]`). Another port: the variable `DL_SUB_DUB_URL` (`http://127.0.0.1:4420` by default).
 
-File pickers use the system dialog: PowerShell on Windows, `osascript` on macOS, `zenity` or `kdialog` on Linux. Without any of them, type the path in the field.
+Tools: `service_status`, `list_projects`, `project_status` (each video, the state of each step, the estimate of a paid
+translation waiting), `new_project` (addresses, files, folders, `.txt` lists; not started unless asked), `add_videos`,
+`open_project`, `run_project`, `run_video` (steps of one video one after the other), `cancel_video`,
+`approve_translation`, `pause_project`. A paid translation still stops to show its cost: the assistant is told to ask
+you before `approve_translation`. **Only for videos, and voices, you have the right to use.**
 
-## Step-by-step batches
+### The API
 
-`Transcription → AI review → Validation → Translation → Dubbing → MKV`. Each video in a batch shows its steps as dots, read from disk: a finished step is not redone, even after a restart.
-
-- **Choose at the start**, for one video or a batch: *subtitles only*, or *subtitles + dubbing*. The steps and buttons follow. A batch can change its goal later; switching to dubbing starts nothing until you click **Resume** or **Continue**.
-- **Continue** takes one episode to the end of what the batch must produce, ahead of the others, so you can check it before running the rest.
-- **AI review** (needs a Claude translator, a few cents per video) finds proper names the transcription distorted. Nothing changes without your validation. Accepted names go to `subtitles.glossary.json`, and `transcription.json` is never rewritten.
-- A `.srt` you edited by hand is not overwritten, unless you tick the redo option. Dubbing and the MKV then use your version.
-
-### Dubbing (optional, off by default)
-
-It clones the original voice sentence by sentence in the first translated language, keeps the background sound, and needs a graphics card (about 4.3 GB of video memory, and about 8 min 30 for 30 min of video on the machine used for testing). **Only clone a voice and dub content you have the right to use.**
-
-It runs in a separate Python environment with `torch`, `demucs`, `omnivoice`, `soundfile` and `num2words`, plus `ffmpeg`. Set it up in the `[dubbing]` table of your settings: `enabled`, `command` (the Python of that environment), `model` (a Hugging Face id or a local folder), and `wsl = true` if the command goes through WSL.
-
-The result is `<video>.multi.mkv` next to the video: original tracks copied without re-encoding, the dubbed track, and the subtitles of each language. An option puts it in place of the video as `<video>.mkv`, once its tracks and duration are checked. The original goes to the recycle bin. If there is no recycle bin, both files are kept.
-
-## Settings
-
-Open **Settings** on the page. Your settings are saved in `config.json` in the user folder (`%LOCALAPPDATA%\subtitles` on Windows, `$XDG_CONFIG_HOME/subtitles` or `~/.config/subtitles` elsewhere). They override the defaults shipped in `subtitles/config.toml`, which only contains examples.
-
-**API keys are never stored in clear text.** The key field holds a reference, and a plain value is refused:
-
-| Reference | Meaning |
-| --- | --- |
-| `env:<NAME>` | environment variable |
-| `file:<path>` | file containing the key, outside the repository |
-| `sops:<file>#<NAME>` | decrypted when used, if sops is installed |
-
-**Downloads** (Settings, `[youtube]` table): the folder of the downloaded videos (the output folder by default; a Windows path such as `D:/Videos`, even when yt-dlp runs in WSL: the tool converts it), the maximum quality (1080p by default, with sound up to 128 kb/s: no 4K files of several GB to make subtitles), and other yt-dlp options, such as `--cookies-from-browser firefox` for videos that need an account. Your own yt-dlp configuration file is still read (cookies, JavaScript runtime…); these settings replace only its output folder and format. Also in the `[youtube]` table: `merge_format` (`mp4`), `retries` (10, for the passing 403 errors of YouTube), `max_audio_kbps`.
-
-## Languages
-
-The page, the task logs, the error messages and the command line are in English and French.
-
-- **Web page**: it follows the browser language. The selector at the top of the page fixes it; the choice is saved (`ui_language` setting) and the task logs follow it too.
-- **Command line**: `--lang`, otherwise the `ui_language` setting, otherwise the system language.
-- **API**: send `X-Language: en` (or `fr`) to get error messages in that language.
-
-**Adding a language** takes one file and no code: copy `subtitles/locales/en.json` to `<code>.json` (for example `de.json`) and translate the values. Keep the `{placeholders}` as they are. A text that depends on a number has one form per plural category (`one`, `other`, plus `few` or `many` where the language needs them). A missing text falls back to English, and the new language shows up in the selector by itself. Language names come from the browser, so there is nothing to translate for them. `pytest` checks that every file has the same keys and placeholders as `en.json`.
-
-The setting names, the command line options and the API fields are in English: they are identifiers, not text.
-
-## How it works
-
-1. **Source.** `yt-dlp` downloads the video into the download folder if needed, then `ffmpeg` extracts the audio.
-2. **Transcription.** The audio goes to your server; the result is kept in `transcription.json`.
-3. **Cutting.** Words are grouped into sentences, then into subtitles of at most 2 lines of 42 characters and 6 seconds.
-4. **Translation.** Numbered batches of 25 lines, with context. Timings do not change.
-5. **Files.** Each `.srt` is copied next to the video, where most players load it automatically, and/or into the output folder.
-6. **Cleanup.** Extracted audio is removed; `transcription.json` and translations are kept.
-
-## Local service
-
-`GET /api/health` reports whether the service is busy, its current activity (`batch 3/22`), the time left and the idle countdown. After 60 minutes without activity the service stops by itself; running work is never interrupted.
-
-## HTTP API
-
-The web page uses a local JSON API on `http://127.0.0.1:4420`, which scripts can use too. It has no authentication: it only listens on the local machine, and refuses the requests sent by other websites open in the browser (`Origin` and `Host` headers checked; `curl` and scripts are accepted). Error messages follow the `X-Language` header (`en`, `fr`). Each route is a function marked `@route` in `subtitles/web/server.py`, with its body fields in its docstring.
+The web page uses a local JSON API on `http://127.0.0.1:4420`, which scripts can use too. It has no authentication: it only listens on the local machine, and refuses the requests sent by other websites open in the browser (`Origin`, `Host` and `Sec-Fetch-Site` headers checked, see [Security](SECURITY.md); `curl` and scripts are accepted). Error messages follow the `X-Language` header (`en`, `fr`). Each route is a function marked `@route` in `subtitles/web/server.py`, with its body fields in its docstring.
 
 | Request | Purpose |
 | --- | --- |
@@ -170,16 +285,60 @@ The web page uses a local JSON API on `http://127.0.0.1:4420`, which scripts can
 | `POST /api/folder` `{path}` then `GET /api/folder/<id>?videos=1` | list the videos of a folder |
 | `POST /api/youtube` `{url}` | title and duration of a video address, or the playlist it designates, without downloading |
 | `POST /api/playlist` `{url}` then `GET /api/playlist/<id>` | download a whole playlist into a folder, then open it with `/api/folder` |
-| `POST /api/batches` `{root, videos: [{path, language}], languages?, translator?, pause?, stop?}` | start a batch |
-| `GET /api/batches/<id>` | progress: `state`, `phase`, `step` (step of the running video), counts, time left |
-| `POST /api/batches/load` `{file}` then `POST /api/batches/<id>/resume` | resume from a `subtitles.batch.json` |
-| `POST /api/batches/<id>/suspend`, `stop`, `cancel`, `translate` | control a batch (`suspend`: after the running video; `stop`: now, the video goes back to the list) |
-| `GET /api/health` | busy or not, activity, time left (see above) |
+| `POST /api/sources` `{entries}` | what Select adds: the videos of addresses, playlists, files, folders and lists, without downloading |
+| `POST /api/projects` `{items: [{source, language?}], stages?, title?, settings?: {languages?, translator?, pause?…}, location?: {base, named}, start?}` | a project: its videos (files or addresses), its steps, its settings; `start` runs it at once |
+| `GET /api/projects`, `GET /api/projects/<id>`, `GET /api/projects/<id>/events` | the open projects; the summary of one (`state`, `phase`, `step` of the running video, counts, time left, each video with its steps and what can be done with it), or the same pushed at each change (Server-Sent Events) |
+| `POST /api/projects/load` `{file}` then `POST /api/projects/<id>/resume` | resume from a `dl-sub-dub.project.json` (or an older `subtitles.batch.json`) |
+| `POST /api/projects/<id>/suspend`, `stop`, `cancel`, `translate` | control a project (`suspend`: after the running video; `stop`: now, the video goes back to the list) |
+| `POST /api/projects/<id>/location` `{title?, base?, named?}` | rename the project; move it while nothing has started |
+| `POST /api/projects/<id>/start` `{stages?, only?}`, `/select`, `/settings`, `/items/<item>/run` `{stage}` (or `{stages}`: one after the other), `/items/<item>/cancel` | run steps, tick, settings, one video one step (or several in a row) |
+| `GET /api/projects/<id>/items/<item>/log` | the log of the download of a video |
+| `GET /api/health` | busy or not, activity, time left ([reference](docs/reference.md#the-service)) |
 
 ```
-curl -s -X POST localhost:4420/api/batches -H "Content-Type: application/json"   -d '{"root": "D:/Series/S1", "videos": [{"path": "D:/Series/S1/e01.mkv"}], "languages": ["fr"], "pause": false}'
-curl -s localhost:4420/api/batches/<id>
+curl -s -X POST localhost:4420/api/projects -H "Content-Type: application/json"   -d '{"items": [{"source": "D:/Series/S1/e01.mkv"}], "settings": {"languages": ["fr"], "pause": false}, "start": true}'
+curl -s localhost:4420/api/projects/<id>
 ```
+
+## Good to know
+
+- **Cost before spending.** With a paid translator, the project stops after the transcription and shows the tokens and the price for each model. The dubbing never starts a translation by itself.
+- **Nothing is done twice.** A step whose result is on the disk is skipped. A project resumes after an interruption, a stopped download resumes where it was, a stopped dubbing keeps the sentences it already made, and changing a language or the layout does not transcribe again.
+- **Two orders of work.** Step by step (every video through one step, then the next: the cost of every translation before any is paid) or video by video (a first video finished sooner).
+- **Your edits are kept.** A `.srt` edited by hand is not overwritten; the dubbing and the MKV use your version.
+- **Proper names.** The transcription often distorts them. The optional AI review (Claude) finds them, and nothing is changed without your validation.
+- **Short lines of a dialogue.** A sentence too short to clone a voice well is completed only with nearby lines of the same person, told apart by a speaker-recognition model (WavLM, 380 MB, downloaded on the first dubbing): a man does not take the voice of the woman who answers him.
+- **The original is respected.** The MKV is made next to the video, without re-encoding. An option puts it in its place; the original then goes to the recycle bin.
+- **A downloaded file keeps its address.** Added later to another project, it still offers the audio tracks and the subtitles of its site (Download tab of its line), and pasting its address into that project does not download it a second time.
+- **File names.** A downloaded video is named after its title. The characters a disk refuses are replaced by yt-dlp, and a title too long for a file name is shortened.
+- **The service stops by itself** after 60 minutes without activity (it can be changed); running work is never interrupted.
+- **What leaves your machine.** Nothing but what you choose: the sites of the videos (yt-dlp), the audio to your transcription server if it is on another machine, the text of the subtitles to a translation API if you use one, and the download of the dubbing models. No telemetry; the service listens on `127.0.0.1` only ([Security](SECURITY.md)).
+- **Where your data is.** The settings in `config.json` in the user folder (`%LOCALAPPDATA%\subtitles` on Windows, `~/.config/subtitles` elsewhere); each project in a `dl-sub-dub.project.json` in its folder; the working files in `.work` of the output folder.
+
+## Troubleshooting
+
+| What you see | What to look at |
+|---|---|
+| "The dl-sub-dub service does not answer" | It stopped (by itself after 60 min, or closed): run `python -m subtitles.web` again. |
+| **Test** fails for the transcription | Is the server running, at the right address? A server that returns only segments, without word timestamps, is refused. |
+| A YouTube download fails | Update yt-dlp (the page offers it when it is old) and check its JavaScript runtime (Deno, or Node 22 or later). |
+| A video needs an account | Add `--cookies-from-browser firefox` (or your browser) in **Settings › Downloads**. |
+| A subtitle shows while nobody speaks | The transcription model "heard" words in a noise, a crowd or music. Delete that subtitle in the `.srt` of each language: your edits are kept, and a new dubbing will no longer say it. |
+| The dubbing runs out of memory, or becomes very slow | Choose "One AI at a time" (settings of the project, Graphics card), or run **Check the graphics card**. |
+| transcription-handy-like without Docker on Windows: `WinError 4551` | Smart App Control blocks its libraries: use Docker. |
+
+## Limits
+
+- Sites that need an account need your cookies (a yt-dlp option).
+- The dubbing has only been tried with an NVIDIA graphics card, and on the processor alone (about 30 times slower). On an Apple Silicon Mac or an AMD card it should work, but we could not check it: [tell us](#dubbing). Its voice model does not allow commercial use.
+- The subtitles are as good as the transcription.
+- The page and the messages are in English and French; [adding a language](docs/reference.md#languages-of-the-interface) takes one JSON file.
+
+## Going further
+
+- [Reference](docs/reference.md): the chain of one video step by step, the steps in detail, the command line, the service.
+- [How the code fits together](docs/code.md): the architecture, its diagrams and its choices.
+- [Security](SECURITY.md) · [AGENTS.md](AGENTS.md) · [Changelog](CHANGELOG.md)
 
 ## Development
 
@@ -191,4 +350,4 @@ curl -s localhost:4420/api/batches/<id>
 
 ## License
 
-MIT, see [LICENSE](LICENSE).
+MIT, see [LICENSE](LICENSE). The engines you connect have their own licences, gathered in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md): in particular, the voice model of OmniVoice is under CC BY-NC (non-commercial use).

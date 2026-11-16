@@ -1,5 +1,5 @@
 """A folder as the source: inventory of the videos and of the subtitles already next to them, language of the audio
-track (ffprobe tag when there is one), and batch file to resume a long piece of work after an interruption.
+track (ffprobe tag when there is one), and project file to resume a long piece of work after an interruption.
 
 Subtitles recognised next to a video: `<name>.<code>.srt` or `.vtt` (code of 2 or 3 letters, variants "fr-FR" or
 "pt-BR" included), and `<name>.srt` (unknown language, "?").
@@ -9,17 +9,16 @@ import os
 import re
 import subprocess
 import threading
-import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from . import i18n, source
+from .project import store as project_store
 from .states import ScanState
 
 VIDEO_EXTENSIONS = {".mp4", ".mkv", ".webm", ".mov", ".avi", ".m4v", ".mpg", ".mpeg", ".ts", ".wmv", ".flv"}
 SUBTITLE_EXTENSIONS = {".srt", ".vtt"}
-BATCH_FILE_NAME = "subtitles.batch.json"
 MUXED_SUFFIX = ".multi.mkv"                    # multi-track MKV made by the mux step: not a video to process
 WORK_DIR = ".work"                             # working folders, inside the output folder
 _CODE = re.compile(r"^[a-z]{2,3}(?:-[a-zA-Z]{2,4})?$")
@@ -113,8 +112,8 @@ class FolderScan:
         self.error = ""
         self._cancelled = threading.Event()
         self._lock = threading.Lock()
-        batch_file = self.root / BATCH_FILE_NAME
-        self.existing_batch = str(batch_file).replace("\\", "/") if batch_file.is_file() else None
+        project_file = project_store.find(self.root)
+        self.existing_project = str(project_file).replace("\\", "/") if project_file else None
 
     def start(self):
         threading.Thread(target=self.run, daemon=True, name="folder-scan").start()
@@ -150,38 +149,8 @@ class FolderScan:
             done = self.done
         d = {"id": self.id, "root": str(self.root).replace("\\", "/"), "state": self.state, "seen": self.seen, "done": done,
              "count": len(self.videos) if self.videos is not None else 0, "languages": languages, "error": self.error,
-             "languages_interrupted": self._cancelled.is_set() and self.videos is not None, "existing_batch": self.existing_batch}
+             "languages_interrupted": self._cancelled.is_set() and self.videos is not None, "existing_project": self.existing_project}
         if with_videos and self.videos is not None:
             d["videos"] = self.videos
         return d
 
-
-# --- Batch file: selection, per-video settings, progress; read back to resume ------------------------------------
-
-def batch_path(root: Path, output_dir: Path | None, in_output_dir: bool) -> Path:
-    """In the output folder if the "output folder" destination is ticked, otherwise in the source folder."""
-    return (Path(output_dir) if in_output_dir and output_dir else Path(root)) / BATCH_FILE_NAME
-
-
-def write_batch(file: Path, batch: dict):
-    file.parent.mkdir(parents=True, exist_ok=True)
-    batch = {**batch, "updated": time.strftime("%Y-%m-%d %H:%M:%S")}
-    tmp = file.with_suffix(".tmp")
-    tmp.write_text(json.dumps(batch, ensure_ascii=False, indent=1), encoding="utf-8")
-    tmp.replace(file)
-
-
-def read_batch(file: Path) -> dict:
-    file = Path(file)
-    if file.is_dir():
-        file = file / BATCH_FILE_NAME
-    if not file.is_file():
-        raise source.SourceError(i18n.t("err.batch_file_not_found", path=file))
-    try:
-        batch = json.loads(file.read_text(encoding="utf-8"))
-    except ValueError as e:
-        raise source.SourceError(i18n.t("err.batch_file_unreadable", error=e)) from e
-    if not isinstance(batch.get("videos"), list):
-        raise source.SourceError(i18n.t("err.batch_file_no_videos"))
-    batch["file"] = str(file).replace("\\", "/")
-    return batch

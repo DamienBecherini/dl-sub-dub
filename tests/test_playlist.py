@@ -1,4 +1,4 @@
-"""Playlists: read with yt-dlp (simulated here), downloaded into a folder of their own, then a batch like any folder."""
+"""Playlists: read with yt-dlp (simulated here), downloaded into a folder of their own, then a project like any folder."""
 import json
 import subprocess
 from types import SimpleNamespace
@@ -8,6 +8,7 @@ import pytest
 from subtitles import __main__ as cli, source
 from subtitles.states import DownloadState
 from subtitles.web.playlist import PlaylistDownload
+from helpers import titled
 
 YTDLP = ["yt-dlp"]
 ENTRIES = [{"_type": "url", "id": "a", "url": "https://v.example/a", "title": "First", "duration": 60},
@@ -35,7 +36,7 @@ class FakeYtdlp:
         if ident in self.broken:
             return SimpleNamespace(returncode=1, stdout="", stderr="ERROR: Private video")
         out = args[args.index("-o") + 1]
-        name = out.replace("%(title)s", next(e["title"] for e in ENTRIES if e["id"] == ident)).replace("%(ext)s", "mp4")
+        name = titled(out, next(e["title"] for e in ENTRIES if e["id"] == ident)).replace("%(ext)s", "mp4")
         if "--print" in args:
             return SimpleNamespace(returncode=0, stdout=json.dumps({"id": ident, "title": "t", "duration": 1, "filename": name}) + "\n", stderr="")
         self.downloads.append(ident)
@@ -47,6 +48,7 @@ class FakeYtdlp:
 def ytdlp(tmp_path, monkeypatch):
     fake = FakeYtdlp(tmp_path)
     monkeypatch.setattr(source.subprocess, "run", fake)
+    monkeypatch.setattr(source, "_run_cancellable", lambda cmd, cancelled: fake(cmd).returncode)   # the download itself
     monkeypatch.setattr(source, "tool", lambda name: name)
     return fake
 
@@ -115,10 +117,10 @@ def test_background_download_of_a_single_video_is_an_error(monkeypatch, tmp_path
     assert job.state == DownloadState.ERROR and "playlist" in job.error
 
 
-def test_command_line_downloads_then_runs_the_folder_as_a_batch(ytdlp, tmp_path, monkeypatch):
+def test_command_line_downloads_then_runs_the_folder_as_a_project(ytdlp, tmp_path, monkeypatch):
     seen = {}
     monkeypatch.setattr(cli.config, "load", lambda: {"output_dir": str(tmp_path), "youtube": {"command": YTDLP}})
-    monkeypatch.setattr(cli.batch_cli, "run", lambda path, cfg, log, **kw: seen.update(path=path, kw=kw) or 0)
+    monkeypatch.setattr(cli.folder_cli, "run", lambda path, cfg, log, **kw: seen.update(path=path, kw=kw) or 0)
     assert cli.main(["https://v.example/list", "--languages", "fr"]) == 0
     assert seen["path"].endswith("My course 2026") and seen["kw"]["languages"] == ["fr"]
     assert sorted(p.name for p in (tmp_path / "My course 2026").iterdir()) == ["001 - First.mp4", "002 - Second.mp4"]
@@ -149,6 +151,6 @@ def test_download_settings_become_ytdlp_options(tmp_path):
     assert c[c.index("-f") + 1] == "bv*[height<=1080]+ba[abr<=128]/bv*[height<=1080]+ba/b[height<=1080]/bv*+ba/b"
     assert c[c.index("--merge-output-format") + 1] == "mp4" and "--fragment-retries" in c
     assert source.ytdlp_format() == "bv*+ba/b"
-    assert source.ytdlp_command({"output_dir": "x"}) == ["yt-dlp", "-f", "bv*+ba/b"]
+    assert source.ytdlp_command({"output_dir": "x"}) == ["yt-dlp", "-f", "bv*+ba/b", "--embed-metadata"]
     assert source.download_dir(cfg) == tmp_path / "out"
     assert source.download_dir({**cfg, "youtube": {"download_dir": str(tmp_path / "dl")}}, "page") == tmp_path / "dl"

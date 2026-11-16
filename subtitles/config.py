@@ -1,8 +1,10 @@
 """Configuration: package defaults (subtitles/config.toml) overridden by the user settings (config.json in the user
 folder, written by the web interface). Keys are never stored in clear text: a reference "env:<NAME>",
 "file:<path>" (file that holds the key) or "sops:<file>#<NAME>" (if sops is installed)."""
+import copy
 import json
 import os
+import threading
 import shutil
 import subprocess
 import tomllib
@@ -26,15 +28,52 @@ class ConfigError(Exception):
     pass
 
 
+def _stamp(file: Path | None):
+    """What changes when a file is written: its time and size (None: no file)."""
+    try:
+        st = file.stat()
+        return st.st_mtime_ns, st.st_size
+    except (OSError, AttributeError):
+        return None
+
+
+_CACHE: dict = {}                    # (files, their stamps) -> settings read: the page asks often (each event of a project)
+_CACHE_LOCK = threading.Lock()
+_SAVE_LOCK = threading.Lock()
+
+
 def load(defaults_file: Path = DEFAULTS_FILE, user_file: Path | None = USER_FILE) -> dict:
+    """The settings: read again only when one of the two files changed (its time or size), a copy each time (the
+    callers change what they get)."""
+    key = (str(defaults_file), str(user_file), _stamp(defaults_file), _stamp(user_file))
+    with _CACHE_LOCK:
+        cached = _CACHE.get(key)
+    if cached is None:
+        cached = _read(defaults_file, user_file)
+        with _CACHE_LOCK:
+            _CACHE.clear()               # only the last one: an older stamp will not come back
+            _CACHE[key] = cached
+    return copy.deepcopy(cached)
+
+
+def _read(defaults_file: Path, user_file: Path | None) -> dict:
     with open(defaults_file, "rb") as f:
         cfg = tomllib.load(f)
+    own = {}
     if user_file and user_file.exists():
         own = json.loads(user_file.read_text(encoding="utf-8"))
         cfg = merge(cfg, own)
     if cfg.get("output_dir"):
         cfg["output_dir"] = os.path.expanduser(cfg["output_dir"])
+    if not (user_file and user_file.exists() and "target_languages" in own):
+        cfg["target_languages"] = default_languages(cfg)
     return cfg
+
+
+def default_languages(cfg: dict) -> list[str]:
+    """The languages of a new project until the user chooses some (Settings): the interface's and English."""
+    first = i18n.pick(cfg.get("ui_language")) or i18n.system_language()
+    return list(dict.fromkeys([first, "en"]))
 
 
 def merge(base: dict, over: dict) -> dict:
@@ -54,7 +93,13 @@ def save(cfg: dict, file: Path = USER_FILE):
         if key and not key.startswith(REFERENCES):
             raise ConfigError(i18n.t("err.key_value_refused", name=m.get("name", m.get("id")), forms=i18n.t("cfg.key_forms")))
     file.parent.mkdir(parents=True, exist_ok=True)
-    file.write_text(json.dumps(cfg, ensure_ascii=False, indent=1), encoding="utf-8")
+    # Written aside, then put in place in one go: a service stopped midway never leaves half a file of settings.
+    partial = file.with_name(file.name + ".partial")
+    with _SAVE_LOCK:                     # two saves at once (the page, the check of the card) share that file
+        partial.write_text(json.dumps(cfg, ensure_ascii=False, indent=1), encoding="utf-8")
+        os.replace(partial, file)
+    with _CACHE_LOCK:
+        _CACHE.clear()                   # even if the time of the file did not move (a coarse clock)
 
 
 def engine_name(m: dict) -> str:

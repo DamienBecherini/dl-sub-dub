@@ -8,6 +8,7 @@ the video and/or into the output folder (`[destination]` table), then cleanup of
 Two phases: `prepare` (source, audio, transcription, original subtitles) then `translate_and_copy`
 (translations, copies, cleanup); `run` chains both.
 """
+import dataclasses
 import hashlib
 import json
 import shutil
@@ -42,7 +43,7 @@ class Request:
     cleanup: bool = True               # applies [cleanup] to the working folder at the end
     on_duration: object = None         # callback called with the audio duration before transcribing it (time left)
     glossary: str | None = None        # file of the validated names (see glossary.py)
-    on_progress: object = None         # callback (done, total) at each chunk of translated subtitles
+    on_progress: object = None         # callback (done, total, languages left after this one) at each chunk translated
 
 
 @dataclass
@@ -159,7 +160,11 @@ def prepare(r: Request, log=print, step=lambda name: None, cancelled=lambda: Fal
     # 1. Source
     step("source")
     if source.is_url(r.source):
-        video = source.download_youtube(r.source, source.ytdlp_command(cfg), log, folder=source.download_dir(cfg, r.output_dir))
+        try:
+            video = source.download_youtube(r.source, source.ytdlp_command(cfg), log, folder=source.download_dir(cfg, r.output_dir),
+                                            cancelled=cancelled)
+        except source.DownloadCancelled:
+            raise Cancelled() from None
     else:
         video = Path(r.source).expanduser().resolve()
         if not video.is_file():
@@ -206,7 +211,7 @@ def prepare(r: Request, log=print, step=lambda name: None, cancelled=lambda: Fal
             try:
                 tr = ask()
             except transcription.TranscriptionTimeout as e:
-                log(i18n.t("log.retry", error=e))      # answer lost on the way (already seen): a batch must not stay stuck
+                log(i18n.t("log.retry", error=e))      # answer lost on the way (already seen): a project must not stay stuck
                 tr = ask()
         except transcription.TranscriptionCancelled:
             raise Cancelled() from None            # the server was told by the closed connection
@@ -218,7 +223,7 @@ def prepare(r: Request, log=print, step=lambda name: None, cancelled=lambda: Fal
 
     # 3. Segmentation in the original language
     step("segmentation")
-    code = wanted_language or tr.get("language") or language.detect(tr.get("text", "")) or "xx"
+    code = wanted_language or tr.get("language") or language.detect(tr.get("text", "")) or _asked_language(work) or "xx"
     words, fixes = glossary.fix_words(tr["words"], glossary.load(r.glossary))
     if fixes:
         log(i18n.t("log.glossary_fixed", n=fixes))
@@ -249,6 +254,34 @@ def place_srt(source_srt: Path, target: Path, fingerprints: dict, redo: bool = F
     fingerprints[str(target)] = new
 
 
+ASKED_LANGUAGE = "language.json"             # in the working folder: the language found by the translator (not asked again)
+
+
+def _asked_language(work: Path) -> str:
+    try:
+        return str(json.loads((work / ASKED_LANGUAGE).read_text(encoding="utf-8")).get("code") or "")
+    except (OSError, ValueError, AttributeError):
+        return ""
+
+
+def _recognised(p: Prepared, translator, name: str, log) -> Prepared:
+    """Spoken language not found by its function words ("xx"): asked to the translator, which reads the subtitles
+    anyway. Found, the subtitles of the spoken language take its code (file renamed) and it is kept for next time."""
+    try:
+        code = language.ask(translator, [c.text for c in p.cues])
+    except translation.TranslationError as e:
+        log(i18n.t("log.language_ask_failed", error=e))
+        return p
+    if not code:
+        log(i18n.t("log.language_ask_failed", error="?"))
+        return p
+    source = p.source_srt.with_name(f"{p.base}.{code}.srt")
+    p.source_srt.replace(source)
+    (p.work / ASKED_LANGUAGE).write_text(json.dumps({"code": code}), encoding="utf-8")
+    log(i18n.t("log.language_asked", translator=name, code=code, lang=i18n.language_name(code)))
+    return dataclasses.replace(p, code=code, source_srt=source)
+
+
 def translate_and_copy(r: Request, p: Prepared, log=print, step=lambda name: None, cancelled=lambda: False) -> Result:
     cfg = r.cfg
     settings = Settings(**cfg.get("subtitles", {}))
@@ -264,7 +297,12 @@ def translate_and_copy(r: Request, p: Prepared, log=print, step=lambda name: Non
         texts = [s.text for s in p.cues]
         translator = None
         try:
-            for target in targets:
+            if p.code == "xx":                    # spoken language unknown: the translator recognises it
+                translator = translation.create(m_trans, log)
+                p = _recognised(p, translator, config.engine_name(m_trans), log)
+                targets = [c for c in targets if c != p.code]
+                files = [OutputFile(p.code, p.source_srt, len(p.cues), False)]
+            for k, target in enumerate(targets):
                 trans_file = translation_file(p.work, target)
                 translated = None
                 if trans_file.exists() and not r.redo:
@@ -283,7 +321,9 @@ def translate_and_copy(r: Request, p: Prepared, log=print, step=lambda name: Non
                     if terms:
                         log(i18n.t("log.glossary_terms", n=len(terms)))
                     translated = translation.translate_texts(translator, texts, int(cfg.get("translation", {}).get("chunk_size", 25)),
-                                                             log, cancelled=cancelled, target=target, terms=terms, progress=r.on_progress)
+                                                             log, cancelled=cancelled, target=target, terms=terms,
+                                                             progress=(lambda d, n, more=len(targets) - k - 1: r.on_progress(d, n, more))   # noqa: B008 (counted now, on purpose)
+                                                             if r.on_progress else None)
                     trans_file.write_text(json.dumps(translated, ensure_ascii=False, indent=1), encoding="utf-8")
                     log(i18n.t("log.translated", s=round(time.perf_counter() - t)))
                 final = segmentation.split_too_long([Cue(s.start, s.end, t) for s, t in zip(p.cues, translated)], settings)
@@ -340,35 +380,67 @@ def translate_and_copy(r: Request, p: Prepared, log=print, step=lambda name: Non
     return Result(p.video, main.path, p.source_srt, p.code, main.count, main.translated, all_copies, duration, files)
 
 
-def dub_and_mux(r: Request, p: Prepared, res: Result, until: str, log=print, step=lambda name: None, cancelled=lambda: False, replace: bool = False) -> dict:
-    """After the translation: dubbed track in the first translated language, then multi-track MKV, which can replace the video. Returns the paths produced."""
-    if steps.integration_mark(p.work).is_file() and not r.redo:
+def dub_and_mux(r: Request, p: Prepared, res: Result, until: str, log=print, step=lambda name: None, cancelled=lambda: False, replace: bool = False,
+                language=None) -> dict:
+    """After the translation: a dubbed voice for each language chosen (`language`: a code, a list, or None for the
+    first translated language) that was translated, then the multi-track MKV with them all, which can replace the
+    video. A voice already made is kept; a language added later makes the MKV again (or, once the MKV replaced the
+    video, is added to it). Returns the paths produced."""
+    translated = {f.language: f for f in res.files if f.translated}
+    wanted = steps.dub_targets(list(translated), res.language, language)
+    voices = [c for c in wanted if c in translated]
+    missing = [c for c in wanted if c not in translated]
+    if missing:
+        log(i18n.t("log.dub_not_translated", langs=", ".join(missing)))
+    if not voices:
+        log(i18n.t("log.dub_no_translation"))
+        return {"not_dubbed": i18n.t("log.dub_no_translation")}
+    integrated = steps.integration_mark(p.work).is_file()
+    made = steps.muxed_languages(p.work)
+    if made is None and (integrated or steps.mkv_path(res.video).exists()):
+        made = voices[:1]                          # an MKV made before several languages: its one voice
+    already = set(made or []) >= set(voices) and not r.redo
+    with_mkv = steps.goes_to(until, "mux")
+    if integrated and already:
         log(i18n.t("log.dub_integrated"))
         return {}
-    target = next((f for f in res.files if f.translated), None)
-    if target is None:
-        log(i18n.t("log.dub_no_translation"))
-        return {}
-    with_mkv = steps.goes_to(until, "mux")
     mkv = steps.mkv_path(res.video)
-    added = 1 + len(res.files)
-    if with_mkv and mkv.exists() and not r.redo:
+    if with_mkv and mkv.exists() and already:
         log(i18n.t("log.mkv_already", file=mkv.name))
-        return _integrate(p, res.video, mkv, added, log) if replace else {"mkv": str(mkv)}
+        return _integrate(p, res.video, mkv, len(voices) + len(res.files), log) if replace else {"mkv": str(mkv)}
     if cancelled():
         raise Cancelled()
     step("dubbing")
-    try:
-        audio = dubbing.dub(r.cfg, res.video, p.work, res.files[0].path, target.path, target.language, log, cancelled, r.redo)
-    except dubbing.DubbingError:
-        if cancelled():
-            raise Cancelled() from None
-        raise
+    to_dub = [c for c in voices if c not in (made or [])] if integrated else voices    # in the video already: kept
+    audios = []
+    on = getattr(r, "on_progress", None)           # the voices one after the other: one progress for them all
+    for n, code in enumerate(to_dub):
+        step("dubbing")                            # back from the mixing of the voice before
+        voice = [n + 1, len(to_dub)] if len(to_dub) > 1 else None
+        progress = (lambda d, total, n=n, voice=voice: on(n * total + d, len(to_dub) * total, 0, voice)) if on else None
+        try:
+            audio = dubbing.dub(r.cfg, res.video, p.work, res.files[0].path, translated[code].path, code, log, cancelled, r.redo,
+                                progress=progress, phase=step)
+        except dubbing.DubbingError:
+            if cancelled():
+                raise Cancelled() from None
+            raise
+        audios.append((code, audio))
+    dubbing.clear_temporary(p.work)                # every voice is made: the separated voice and background are no longer needed
     if not with_mkv:
-        return {"dubbing": str(audio)}
+        return {"dubbing": str(audios[0][1]), "dubbings": {c: str(a) for c, a in audios}}
     step("mux")
-    mkv = muxing.mux(res.video, audio, target.language, res.language, [(f.language, f.path) for f in res.files], log, r.redo)
-    return {"dubbing": str(audio), **(_integrate(p, res.video, mkv, added, log) if replace else {"mkv": str(mkv)})}
+    subs = [(f.language, f.path) for f in res.files]
+    if integrated:                                 # the video is the MKV: only the subtitles it does not hold yet
+        present = {(s.get("tags") or {}).get("language") for s in muxing.probe(res.video)["streams"] if s.get("codec_type") == "subtitle"}
+        subs = [(c, f) for c, f in subs if muxing.code3(c) not in present]
+    mkv = muxing.mux(res.video, audios, audios[0][0], res.language, subs, log, r.redo or mkv.exists())
+    mark = steps.mux_mark(p.work)
+    mark.parent.mkdir(parents=True, exist_ok=True)
+    mark.write_text(json.dumps({"languages": list(dict.fromkeys([*(made or [] if integrated else []), *(c for c, _ in audios)]))}),
+                    encoding="utf-8")
+    return {"dubbing": str(audios[0][1]), "dubbings": {c: str(a) for c, a in audios},
+            **(_integrate(p, res.video, mkv, len(audios) + len(subs), log) if replace else {"mkv": str(mkv)})}
 
 
 def _integrate(p: Prepared, video: Path, mkv: Path, added: int, log) -> dict:

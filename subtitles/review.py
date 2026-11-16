@@ -1,7 +1,7 @@
 """AI review of a transcription: spots the distorted proper names and proposes their fix, without changing anything.
 
-Batch file `subtitles.review.json`, next to the batch file: {"examined": [names already submitted], "proposals": [...]}.
-A name is submitted only once per batch, even if it appears in 200 videos. In the working folder of each video,
+File `subtitles.review.json`, next to the project file: {"examined": [names already submitted], "proposals": [...]}.
+A name is submitted only once per project, even if it appears in 200 videos. In the working folder of each video,
 `review.json` lists the names of this video that were waiting for a decision. A video is validated when none of its
 names is waiting any more: the accepted names join the glossary (see glossary.py), the others stay in "examined".
 The instructions sent to the model are written in French, and so are its reasons.
@@ -43,12 +43,12 @@ SCHEMA = {"type": "object", "additionalProperties": False, "required": ["entries
                    "confidence": {"type": "string", "enum": ["high", "medium", "low"]}, "reason": {"type": "string"}}}}}}
 
 
-def path_for(batch_file: str | Path) -> Path:
-    return Path(batch_file).with_name(FILE_NAME)
+def path_for(project_file: str | Path) -> Path:
+    return Path(project_file).with_name(FILE_NAME)
 
 
 def engine(cfg: dict, translator_id: str | None = None) -> dict | None:
-    """The Claude translator chosen for the batch, else the first configured one; None if there is none (no review)."""
+    """The Claude translator chosen for the project, else the first configured one; None if there is none (no review)."""
     claudes = [m for m in cfg.get("translators", []) if m.get("type") == "claude"]
     return next((m for m in claudes if m.get("id") == translator_id), claudes[0] if claudes else None)
 
@@ -68,8 +68,8 @@ def _write(f: Path, d: dict):
     tmp.replace(f)
 
 
-def pending_names(batch_file: str | Path) -> set[str]:
-    return {p["transcribed"] for p in _read(path_for(batch_file))["proposals"]}
+def pending_names(project_file: str | Path) -> set[str]:
+    return {p["transcribed"] for p in _read(path_for(project_file))["proposals"]}
 
 
 def _without_possessive(n: str) -> str:
@@ -111,13 +111,13 @@ def _submit(translator, title: str, packet: list[dict]) -> list[dict]:
     return r
 
 
-def review(m: dict, batch_file: str | Path, work: Path, title: str, texts: list[str], log=print, cancelled=lambda: False, create=translation.create) -> list[str]:
+def review(m: dict, project_file: str | Path, work: Path, title: str, texts: list[str], log=print, cancelled=lambda: False, create=translation.create) -> list[str]:
     """Writes the proposals of this video; returns its names waiting for a decision. An API failure leaves the review to redo."""
-    f = path_for(batch_file)
+    f = path_for(project_file)
     every = candidates(" ".join(texts))
     with _lock:
         d = _read(f)
-    entries = glossary.load(glossary.path_for(batch_file))
+    entries = glossary.load(glossary.path_for(project_file))
     known = set(d["examined"]) | {p["transcribed"] for p in d["proposals"]} | {e["transcribed"] for e in entries} | {e.get("spelling") for e in entries} | {e.get("french") for e in entries}
     to_submit = [c for c in every if c["name"] not in known]
     log(i18n.t("log.review_names", n=len(every), new=len(to_submit)))
@@ -139,24 +139,24 @@ def review(m: dict, batch_file: str | Path, work: Path, title: str, texts: list[
             _write(f, d)
         log(i18n.t("log.review_to_check", n=len(new)))
     with _lock:
-        pending = pending_names(batch_file)
+        pending = pending_names(project_file)
     mine = sorted({c["name"] for c in every} & pending)
     _write(work / VIDEO_FILE, {"names": mine})
     return mine
 
 
-def proposals(batch_file: str | Path, names: set[str] | None = None) -> list[dict]:
+def proposals(project_file: str | Path, names: set[str] | None = None) -> list[dict]:
     """Pending proposals, possibly limited to these names; the most frequent first."""
     with _lock:
-        items = _read(path_for(batch_file))["proposals"]
+        items = _read(path_for(project_file))["proposals"]
     return sorted((p for p in items if names is None or p["transcribed"] in names), key=lambda p: (-p.get("occurrences", 0), p["transcribed"].lower()))
 
 
-def validate(batch_file: str | Path, decisions: list[dict]) -> tuple[int, int]:
+def validate(project_file: str | Path, decisions: list[dict]) -> tuple[int, int]:
     """Applies the decisions {transcribed, spelling, french, accept}. Returns (accepted, rejected).
     A name accepted without a different spelling and without a French form brings nothing: it is rejected."""
     with _lock:
-        f = path_for(batch_file)
+        f = path_for(project_file)
         d = _read(f)
         pending = {p["transcribed"]: p for p in d["proposals"]}
         accepted, rejected, new = 0, 0, []
@@ -171,7 +171,7 @@ def validate(batch_file: str | Path, decisions: list[dict]) -> tuple[int, int]:
             else:
                 rejected += 1
         if new:
-            glossary.add(glossary.path_for(batch_file), new)
+            glossary.add(glossary.path_for(project_file), new)
         d["proposals"] = [p for p in d["proposals"] if p["transcribed"] in pending]
         _write(f, d)
         return accepted, rejected

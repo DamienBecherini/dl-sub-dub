@@ -31,7 +31,7 @@ async function loadTranslations() {
 }
 
 /* Language chosen ("" = the browser's): catalogs loaded, then the fixed texts of the page translated in place.
-   The texts built by the script are redone by the page itself (app.js, retranslate). */
+   The texts built by the script are redone by the page itself (the page of the four steps draws them again). */
 async function useLanguage(setting) {
   const code = pickLanguage([setting, ...(navigator.languages || [navigator.language])], I18N.available);
   const [texts, fallback] = await Promise.all([readCatalog(code), code === "en" ? {} : readCatalog("en")]);
@@ -55,7 +55,44 @@ function label(prefix, code) {
 }
 
 const I18N_ATTRIBUTES = [["title", "i18nTitle", "data-i18n-title"], ["placeholder", "i18nPlaceholder", "data-i18n-placeholder"],
-                         ["aria-label", "i18nAriaLabel", "data-i18n-aria-label"]];
+                         ["aria-label", "i18nAriaLabel", "data-i18n-aria-label"], ["data-tip", "i18nTip", "data-i18n-tip"],
+                         ["aria-label", "i18nTip", "data-i18n-tip"]];
+
+/* A help bubble (.tip, its text in data-tip, shown on hover and focus by the style sheet): placed from what one sees
+   of the window. Its visible width: the smallest of innerWidth, the visual viewport and the root's clientWidth (a
+   classic scroll bar left out; all three in window pixels, with the text zoom or not). On a small screen (under
+   600 px) the bubble takes that width less 56 px, centred in the window; otherwise at most 380 px, centred on its (?)
+   and 12 px at least from each edge. */
+let placed = null;                                       // the bubble placed last: placed again only when another one
+function visibleWidth() {
+  return Math.min(innerWidth, window.visualViewport ? visualViewport.width : innerWidth, document.documentElement.clientWidth || innerWidth);
+}
+function placeTip(e) {
+  const t = e.target.closest && e.target.closest(".tip");
+  if (!t) return;
+  placed = t;
+  const r = t.getBoundingClientRect();
+  const z = t.currentCSSZoom || 1;                        // text size of the page (boot.js): the bubble's own pixels are zoomed
+  const view = visibleWidth();
+  const small = view < 600;
+  const most = small ? view - 56 : Math.min(380 * z, view - 24);
+  const probe = document.createElement("span");          // the width the bubble will really take (a short text is narrow)
+  probe.style.cssText = `position:absolute;visibility:hidden;white-space:normal;width:max-content;max-width:${most / z}px;`
+    + "padding:8px 10px;font-size:12.5px;font-weight:400;line-height:1.45;letter-spacing:0;text-transform:none;border:1px solid;";
+  probe.textContent = t.dataset.tip || "";
+  t.appendChild(probe);
+  const w = Math.min(probe.getBoundingClientRect().width || most, most);
+  probe.remove();
+  const left = small ? (view - w) / 2 : Math.max(12, Math.min(view - 12 - w, r.left + r.width / 2 - w / 2));
+  t.style.setProperty("--tip-left", `${(left - r.left) / z}px`);
+  t.style.setProperty("--tip-width", `${w / z}px`);
+  t.classList.toggle("below", r.top < 160);
+}
+addEventListener("mouseover", placeTip);
+addEventListener("focusin", placeTip);
+addEventListener("pointerdown", placeTip);                // a tap
+/* The pointer already on a (?) that appears under it (a tab opened): no mouseover in Firefox, the bubble shown unplaced. */
+addEventListener("mousemove", (e) => { const t = e.target.closest && e.target.closest(".tip"); if (t && t !== placed) placeTip(e); });
 
 function translatePage(root) {
   for (const el of root.querySelectorAll("[data-i18n]")) el.textContent = T(el.dataset.i18n);

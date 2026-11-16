@@ -33,15 +33,21 @@ def test_retry_from_the_history():
     assert g.queue.retry("ab").options == {"language": "en", "source": "v.mp4"}
 
 
-@pytest.mark.parametrize("state", ["queued", "running", "paused", "done", "cancelled"])
-def test_retry_only_after_an_error(state):
+def test_a_cancelled_video_is_resumed():
+    g = manager([{"id": "cd", "state": "cancelled", "source": "v.mp4", "options": {"translator": "local"}}])
+    assert g.queue.retry("cd").options == {"translator": "local", "source": "v.mp4"}
+
+
+@pytest.mark.parametrize("state", ["queued", "running", "paused", "done"])
+def test_retry_only_after_an_error_or_a_cancel(state):
     g = manager()
     assert g.queue.retry(task(g, state).id) is None
 
 
-def test_video_of_a_batch_retried_by_the_batch():
+def test_video_of_a_project_retried_by_the_project():
     g = manager()
-    assert g.queue.retry(task(g, "error", batch="xyz").id) is None
+    assert g.queue.retry(task(g, "error", project="xyz").id) is None
+    assert g.queue.retry(task(g, "error", batch="xyz").id) is None           # as a history written before names it
 
 
 def test_unknown_task():

@@ -1,6 +1,6 @@
-"""Validated glossary of a batch: fixes badly transcribed names and guides their translation.
+"""Validated glossary of a project: fixes badly transcribed names and guides their translation.
 
-File `subtitles.glossary.json` next to the batch file: [{"transcribed", "spelling", "french"}], only the accepted
+File `subtitles.glossary.json` next to the project file: [{"transcribed", "spelling", "french"}], only the accepted
 entries. `transcription.json` is never rewritten: the fix applies to the words in memory, on the exact word.
 """
 import json
@@ -23,8 +23,8 @@ def load(path: str | Path | None) -> list[dict]:
     return [e for e in data if isinstance(e, dict) and e.get("transcribed")] if isinstance(data, list) else []
 
 
-def path_for(batch_file: str | Path) -> Path:
-    return Path(batch_file).with_name(FILE_NAME)
+def path_for(project_file: str | Path) -> Path:
+    return Path(project_file).with_name(FILE_NAME)
 
 
 def fingerprint(file: str | Path | None) -> float:

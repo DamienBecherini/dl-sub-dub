@@ -8,14 +8,13 @@ import http.client
 import json
 import re
 import socket
-import threading
 import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
 from pathlib import Path
 
-from . import i18n
+from . import cancellation, i18n
 
 
 _LANGUAGE_CODE = re.compile(r"^[a-z]{2,3}(-[A-Za-z]{2,4})?$")
@@ -43,42 +42,41 @@ def health_state(d) -> str:
 
 
 def _post(server_url: str, path: str, body: bytes, headers: dict, timeout_s: float, cancelled) -> tuple[int, bytes]:
-    """POST that can be interrupted: the exchange runs in a thread; when `cancelled()` becomes true, the socket is
-    shut down (the server sees the client leave) and TranscriptionCancelled is raised. Returns (status, body)."""
+    """POST that can be interrupted: when the cancellation is asked, the socket is shut down (the server sees the
+    client leave, the exchange under way fails at once) and TranscriptionCancelled is raised. Returns (status, body)."""
     u = urllib.parse.urlsplit(server_url.rstrip("/"))
     connection_class = http.client.HTTPSConnection if u.scheme == "https" else http.client.HTTPConnection
     conn = connection_class(u.hostname, u.port, timeout=timeout_s)
-    outcome: dict = {}
 
-    def exchange():
+    def cut():
         try:
-            conn.request("POST", (u.path or "") + path, body, headers)
-            resp = conn.getresponse()
-            outcome["answer"] = (resp.status, resp.read())
-        except BaseException as e:  # noqa: BLE001 - handed to the waiting thread
-            outcome["error"] = e
+            if conn.sock:
+                conn.sock.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
+        conn.close()
 
-    worker = threading.Thread(target=exchange, daemon=True, name="transcription-request")
-    worker.start()
-    while worker.is_alive():
-        worker.join(CANCEL_CHECK_S)
-        if worker.is_alive() and cancelled():
-            try:
-                if conn.sock:
-                    conn.sock.shutdown(socket.SHUT_RDWR)
-            except OSError:
-                pass
-            conn.close()
+    forget = cancellation.listen(cancelled, cut, CANCEL_CHECK_S)
+    try:
+        conn.connect()
+        if cancelled():                        # asked while connecting: there was no socket to shut down yet
             raise TranscriptionCancelled(i18n.t("err.cancelled"))
-    conn.close()
-    if "error" in outcome:
-        raise outcome["error"]
-    return outcome["answer"]
+        conn.request("POST", (u.path or "") + path, body, headers)
+        resp = conn.getresponse()
+        return resp.status, resp.read()
+    except (OSError, http.client.HTTPException, ValueError, AttributeError):
+        if cancelled():                        # the failure of an exchange cut on purpose
+            raise TranscriptionCancelled(i18n.t("err.cancelled")) from None
+        raise
+    finally:
+        forget()
+        conn.close()
 
 
 def transcribe(server_url: str, audio: Path, language: str | None = None, timeout_s: int = 7200, key: str = "",
                cancelled=lambda: False) -> dict:
-    """Timestamped words of the recording. `cancelled()`: checked twice a second; true closes the connection."""
+    """Timestamped words of the recording. `cancelled` turning true closes the connection (a Cancellation tells at
+    once, any other callable is asked twice a second)."""
     sep = uuid.uuid4().hex
     fields = [("response_format", "verbose_json"), ("timestamp_granularities[]", "word")]
     if language:

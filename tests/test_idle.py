@@ -1,7 +1,7 @@
 from pathlib import Path
 
-from subtitles.web import server
-from subtitles.web.batches import Batch
+from subtitles.web import service
+from helpers import Run
 from subtitles.web.idle import IdleWatch, is_activity
 
 
@@ -13,7 +13,7 @@ class Clock:
 
 
 def test_polling_and_actions():
-    for path in ("/api/health", "/api/status", "/api/tasks", "/api/tasks/ab12?since=3", "/api/batches/ab12", "/api/batches/ab12/estimate"):
+    for path in ("/api/health", "/api/status", "/api/tasks", "/api/tasks/ab12?since=3", "/api/projects/ab12", "/api/projects/ab12/estimate"):
         assert not is_activity("GET", path), path
     assert is_activity("GET", "/") and is_activity("GET", "/api/config") and is_activity("GET", "/api/cleanup")
     assert is_activity("POST", "/api/tasks") and is_activity("PUT", "/api/config")
@@ -65,12 +65,12 @@ def test_remaining_time():
     assert v.remaining_s() == 0
 
 
-def test_progress_of_a_batch():
-    videos = [{"state": e} for e in ("done", "prepared", "running", "todo", "todo")]
-    batch = Batch("/r", videos, {}, Path("/r/f.json"))
-    assert batch.progress_text() == "lot 3/5"
-    batch.phase = 2
-    assert batch.progress_text() == "lot 4/5 (traduction)"
+def test_progress_of_a_project():
+    videos = [{"path": f"/v{i}.mp4", "state": e} for i, e in enumerate(("done", "prepared", "running", "todo", "todo"))]
+    run = Run("/r", videos, {}, Path("/r/f.json"))
+    assert run.progress_text() == "vidéo 3/5"
+    run.phase = 2
+    assert run.progress_text() == "vidéo 4/5 (traduction)"
 
 
 def test_health_answer_follows_the_contract(monkeypatch):
@@ -84,10 +84,10 @@ def test_health_answer_follows_the_contract(monkeypatch):
         def remaining_s(self):
             return 720
 
-    monkeypatch.setattr(server, "manager", Manager())
-    monkeypatch.setattr(server, "idle_timeout_s", lambda: 3600)
-    monkeypatch.setattr(server, "idle", IdleWatch(lambda: 3600, lambda: True))
-    d = server.health()
+    monkeypatch.setattr(service, "manager", Manager())
+    monkeypatch.setattr(service, "idle_timeout_s", lambda: 3600)
+    monkeypatch.setattr(service, "idle", IdleWatch(lambda: 3600, lambda: True))
+    d = service.health()
     assert (d["state"], d["contract"], d["service"], d["busy"], d["activity"]) == ("ready", 2, "subtitles", True, "lot 3/22")
     assert d["remaining_work_s"] == 720
     assert d["idle"] == {"timeout_s": 3600, "remaining_s": None}

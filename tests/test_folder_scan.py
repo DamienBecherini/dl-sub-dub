@@ -1,3 +1,4 @@
+from subtitles.project import store
 from subtitles import folder
 
 
@@ -55,6 +56,6 @@ def test_cancel_during_languages_keeps_the_list(tmp_path, monkeypatch):
     assert d["state"] == "done" and d["count"] == 2 and d["done"] == 1 and d["languages_interrupted"]
 
 
-def test_existing_batch_reported(tmp_path):
-    (tmp_path / folder.BATCH_FILE_NAME).write_text("{}", encoding="utf-8")
-    assert folder.FolderScan(tmp_path).existing_batch.endswith(folder.BATCH_FILE_NAME)
+def test_existing_project_reported(tmp_path):
+    (tmp_path / store.OLD_FILE_NAME).write_text("{}", encoding="utf-8")
+    assert folder.FolderScan(tmp_path).existing_project.endswith(store.OLD_FILE_NAME)

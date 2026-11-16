@@ -1,0 +1,270 @@
+<div align="center">
+
+# dl-sub-dub: reference
+
+**The detail of what the [README](../README.md) sums up: the chain of one video, the steps, the page, the command line, the service.**
+
+**English** · [Français](reference.fr.md) · [README](../README.md) · [How the code fits together](code.md)
+
+</div>
+
+---
+
+## The chain of one video
+
+What happens to one video, from its source to the files:
+
+```mermaid
+flowchart TD
+  src["1. Source<br/>address: yt-dlp<br/>file: as it is"]
+  tr["2. Transcription<br/>each word with<br/>its start and end"]
+  cut["3. Cutting<br/>sentences, then subtitles<br/>of 2 lines × 42 characters"]
+  tl["4. Translation<br/>one per language,<br/>timings unchanged"]
+  files["5. Files<br/>.srt and .vtt next to the video<br/>and/or in the output folder"]
+  clean["6. Cleanup<br/>of the working folder"]
+  server[("Your transcription<br/>server")]
+  llm[("Translator")]
+  src -->|"audio extracted<br/>by ffmpeg"| tr
+  tr -->|"transcription.json"| cut
+  cut -->|"spoken language"| files
+  cut --> tl
+  tl -->|"translation.fr.json"| files
+  files --> clean
+  tr <--> server
+  tl <--> llm
+```
+
+1. **Source.**
+   - An address is downloaded by `yt-dlp` (the command can be set, also through WSL), into the download folder and in the format chosen in the settings (`-f`, `--merge-output-format`, retries).
+   - The configuration file of yt-dlp is still read for the rest (cookies, JavaScript runtime…).
+   - The file is named after the title of the video, with its number first in a project (`001 - Title.mp4`). yt-dlp replaces the characters a disk refuses, and the tool cuts a title too long for a file name (180 bytes at most; less on Windows when the path of the folder is long).
+   - A video already there under that name is not downloaded again.
+   - Then, as for a file, `ffmpeg` extracts the audio track into `<output_dir>/.work/<name>/` (the stream is copied, without re-encoding when the container allows it).
+2. **Transcription.**
+   - The audio goes to the transcription server (`POST /v1/audio/transcriptions`, `response_format=verbose_json`).
+   - It returns each **word with its start and its end** on the timeline of the video (repository `transcription-handy-like` ≥ 0.2, timestamped mode).
+   - Result: `transcription.json`.
+3. **Cutting.**
+   - The words are grouped into sentences (final punctuation, or a pause of 0.6 s or more).
+   - The sentences become subtitles of 2 lines × 42 characters and 6 s at most, cut preferably after a punctuation mark or in a pause.
+   - Each subtitle stays at least 1 s (or the time to read it at 17 characters/s), without running over the next one.
+   - Result: `<name>.<language>.srt`, the subtitles in the spoken language (to check the timing).
+4. **Translation**, one per target language (`target_languages`, the spoken language being skipped).
+   - A spoken language not given and not recognised by its common words (French, English, German, Spanish, Italian, Portuguese, Dutch) is asked to the translator first, from a sample of the subtitles, and kept for the next pass.
+   - The text goes in batches of 25 numbered lines, with the two lines before as context.
+   - The model must return the same numbers. An incomplete batch is sent again, then cut into smaller ones; as a last resort the line stays in its language, and it is reported.
+   - The **timings do not change**. A text that became too long for two lines is shared between two subtitles, in proportion to the characters.
+   - Result: `translation.<code>.json`, `<name>.<code>.srt`, `<name>.<code>.vtt`.
+5. **Files.**
+   - Each `.srt` (spoken language and target languages) is copied under the name of the video followed by the language code: `My video.en.srt`, `My video.fr.srt`.
+   - It goes **next to the video** (VLC and most players load it by themselves) and/or **into the output folder**, as the `[destination]` table or the boxes of the page say.
+6. **Cleanup** of the working folder, by the `[cleanup]` table.
+   - Deleted by default: the extracted audio (at the end of a task, and when a video is cancelled or stopped) and the `.srt` and `.vtt` copies.
+   - A stopped dubbing keeps only the voice separated from the background, taken again as it is afterwards; its other temporary files go when it is stopped. "Clean now" removes that separated voice too (it will be made again, a few minutes).
+   - Kept: `transcription.json` and `translation.<code>.json` (to add a language or change the layout without transcribing or translating again), and the dubbed voices (`dubbing/`).
+   - The logs are kept too, but those older than 48 h (`logs_age_h`, in hours, days or months on the page) are purged when the service starts.
+   - Two optional limits of the whole folder, `max_age_days` and `max_size_mb`, delete the working folders of the oldest videos. Nothing next to the videos is touched.
+   - If no destination is ticked, the `.srt` of the working folder are kept: they are the only copy.
+   - `--no-cleanup`, on the command line, keeps everything.
+
+Each step is skipped if its result already exists (the "Redo…" box or `--redo` to start over); a video whose audio was
+cleaned but whose `transcription.json` exists is neither extracted nor transcribed again.
+
+A `.srt` edited by hand since it was made is not overwritten (unless "Redo…"); the dubbing and the MKV then use that version.
+
+## The steps in detail
+
+What is done is read from the disk: a finished step is not redone, even after a restart, and a project made again over videos already worked on shows them done.
+
+### One video, one step
+
+- **The box of a video for one step** ticks that step, and the steps it needs that are not done (the dubbing its subtitles, the subtitles of an address its download). Unticked, it unticks the steps that need it.
+- **Run** also runs the steps before that ticked videos still need.
+- **The ▾ next to Run** (**Only download**, Only subtitle, Only dub) runs that step alone for the ticked videos, without changing the steps of the project.
+- **The ▾ of a line** lists everything that can be done for that video alone:
+  - the steps left, in a row (Download + subtitle + dub, Subtitle + dub, Download + subtitle): each starts when the one before ends, an error stops the rest;
+  - download again (with the quality and tracks of its Download tab), add tracks;
+  - subtitle again (a language added: only its translation), dub;
+  - open the video, the dubbed MKV or its folder.
+- A language added to a video already done puts its subtitles back to do.
+- While a video is being subtitled or dubbed, the languages (of the project, and its own) are locked: it keeps those it started with. They can be changed once the video has finished, or after Stop. A video waiting for the go-ahead of its translation takes the languages when it is translated.
+- Downloaded videos keep their address inside (shown as Source in Information).
+
+### AI review of the names
+
+The AI review (Claude) finds the proper names the transcription distorted. A name is submitted only once per project. Nothing is corrected without your validation: the accepted names go to `subtitles.glossary.json`, and `transcription.json` is never rewritten.
+
+### Dubbing (optional, off by default)
+
+- **What it does.** It clones the original voice sentence by sentence, in one or several languages, and keeps the background sound. One voice per language, all in the MKV.
+- **Which languages.** By default, every language of the subtitles but the video's own; otherwise those ticked or typed for the project or a video. A language missing from the subtitles is translated first.
+- **Which videos.** Only those already subtitled and translated. The dubbing never starts a translation by itself: a translation may cost money.
+- **Its settings**, for the project or for one video: the dubbed languages, an MKV with every track or the dubbed voice alone, and the MKV in place of the video.
+- **Short sentences.** Each sentence is cloned from its own original passage. A sentence under 3 s is completed only with nearby lines spoken by the same voice, which a speaker-verification model recognises (`microsoft/wavlm-base-plus-sv`, about 380 MB, downloaded from Hugging Face on the first dubbing). In a dialogue, a man's line therefore no longer takes the voice of the woman who answers him.
+- **What it needs.** A separate Python environment with `torch`, `demucs`, `omnivoice`, `transformers`, `soundfile` and `num2words`, plus `ffmpeg`. Preferably an NVIDIA graphics card: about 4.3 GB of video memory, and 8 min 30 for 30 min of video on the test machine (8 GB card). Without one, the models run on the chip of an Apple Silicon Mac (not tried) or on the processor, about 30 times slower ([hardware tried](../README.md#dubbing)).
+- **Where to set it.** The `[dubbing]` table of the settings: `enabled`, `command` (the Python of that environment), `model` (a Hugging Face id or a local folder), `wsl = true` if the command goes through WSL, `device` (`auto`, `cuda`, `mps` or `cpu`: where the voice models run).
+- **Your rights.** Only clone a voice and dub content you have the right to use.
+
+#### A translation model on the same graphics card
+
+- A local translation model (llama.cpp, Ollama, LM Studio…) keeps its memory on the card after translating, and the dubbing needs its own.
+- **Check the graphics card**, in the settings of the project, loads the translation model, dubs a few seconds of a video of the project while it stays loaded, and measures the memory of the card (about a minute; NVIDIA cards, through `nvidia-smi`).
+- Both "fit" only with at least 512 MiB left at the peak. With a full card, Windows does not always fail: it overflows into the RAM, and the dubbing becomes several times slower.
+- The setting "Graphics card" (`gpu_sharing` of `[dubbing]`): "Automatic" (the result of the check, otherwise one AI at a time), "together" or "One AI at a time".
+- With one AI at a time, the card is freed before the dubbing of a project, by the first way available:
+  1. the addresses of `free_gpu` if you give them (for instance the service that runs your model: `stop` before the dubbing, `start` once it is over);
+  2. the `supervision` of the translator if it has one (its model starts again with the next translation);
+  3. unloading an Ollama model;
+  4. otherwise the project waits, and the page asks you to stop the model, then to click "Done, dub".
+- A dubbing that runs out of memory says so on its line, with a button "One AI at a time".
+
+**The MKV.** `<video>.multi.mkv` is made next to the video, without re-encoding and without touching the original: the original tracks, the dubbed track and the subtitles of each language. An option puts it in place of the video, as `<video>.mkv`, once its tracks and its duration are checked; the original goes to the recycle bin, and without a recycle bin both files are kept.
+
+## The page
+
+Each setting of the page has a **?** that explains it, and each state its bubble: this part keeps only what cannot be seen at a glance.
+
+### The project
+
+Above the list:
+
+- **The project**: its name, its folder, **Change**, **Open**.
+- **+ Add videos**: open while the list is being made, folded once work starts; dragging a file over the page opens it.
+- **Settings of the project**: the languages and the order of the work are always shown, the rest is folded. On a phone, their title stays at the top while you go through them.
+- **A follow-up row**: the number of videos, those ticked, once started where it stands (1 of 2 finished, the time left), and Tick all or Untick all.
+
+**Adding videos**
+
+- Type or paste addresses and paths, one per line. Or use **File…**, **Folder…**, **List of addresses…**, or drop videos and `.txt` lists on the page.
+- Addresses of videos and playlists, files, folders and lists mix in one project.
+- Each line shows at once, with its title within a second for YouTube, Dailymotion and Vimeo, then its details.
+- A video already in the project is not added a second time: the page says which line holds it, also when the address pasted is the one a file of the project comes from.
+- The first video read creates the project, so its settings can be set at once.
+
+**Naming and placing the project**
+
+- From the start, before adding anything: its name and its folder (typed or with **Browse…**, with a subfolder named after the project or not; the final folder is shown).
+- Later, **Change** renames it. It moves it too as long as nothing has started; afterwards its videos and subtitles are in its folder, and only the name changes.
+
+**Opening a project again**
+
+- **Open a project…** opens a `dl-sub-dub.project.json` again (or an older `subtitles.batch.json`).
+- A project left unfinished at the previous session is offered at the top: **Resume** reopens it as it was, without starting anything (Run goes on with it); **Ignore** stops offering it.
+
+**The settings of the project**
+
+| Group | What is set there |
+|---|---|
+| Languages, order of the work | Always shown (see the next table for the order). |
+| Steps | The steps of the project. |
+| Dubbing | The dubbed languages, an MKV with every track or the dubbed voice alone, the MKV in place of the video. |
+| Subtitles | The engines (those marked "Default" in the Settings, unless the project or a video chooses another), the spoken language, the pause before a paid translation (ticked by default for a paid translator), the AI review of the names, where the files go (next to the video and/or in the output folder). |
+| Download | The quality of the videos of the project. |
+| Graphics card | Translation and dubbing together or one AI at a time (see [Dubbing](#dubbing-optional-off-by-default)). |
+
+**The order of the work** (for this project; for every new project, in the Settings)
+
+| Order | What it does | Why |
+|---|---|---|
+| *Step by step* (the default) | Every video goes through one step, then the next. | The cost of every translation is shown before any is paid; each AI is loaded only once. |
+| *Video by video* | Each video goes to its end, then the next. | A first video finished sooner; no pause before the translation; with one AI at a time, the graphics card is freed for each video. |
+
+### Run, follow, stop
+
+- **Run: Download + Subtitles + Dubbing**, at the bottom, runs the steps ticked for the project.
+- **Its ▾** runs one step only for the videos ticked for it. Example: "Only dub (1 to do · 2 ⧗)", where the hourglass counts those waiting for the step before.
+- **Pause** and **Stop** take the place of the button while the project runs. Pause: the videos in progress finish, then it waits. Stop: at once; what is finished is kept, and a download keeps its partial files to resume where it stopped.
+- **Resume: …**, with its steps, comes back in its place afterwards. While a paused project finishes its videos, **Stop now** frees the processor and the graphics card at once.
+- A step can still be run while the project runs (its videos left to do join the work), and a video ticked for download starts at once.
+- Each line also has its button and its ▾, for one video alone: see [One video, one step](#one-video-one-step).
+
+What the page shows while at work:
+
+- **A dubbing in several languages**: the voice under way ("Dubbing (voice 2 of 3)"), and the time left for all the voices.
+- **A download**: its parts (video, audio, finishing) and its step in plain words (reading the site, video, audio, merging, thumbnail), with the speed and the time left.
+- **A translation waiting for your go-ahead**: its estimate per translator (requests, tokens, price or duration; constants in `[estimation]` of `subtitles/config.toml`), with **Translate**.
+- **The time left**, computed by the service. It starts from the duration of each video (or the number of lines for a translation) and the speed seen on the videos of the project. Before the first measure, it takes the speed kept from earlier sessions (`speeds.json`, next to `config.json`), otherwise the `speed` field of the transcription server. A video resumed in a few seconds is not counted.
+
+**Open** plays a video in the default player, which loads the subtitles next to it. The page follows the work as the service pushes it (Server-Sent Events).
+
+### Where the settings are
+
+In `config.json` in the user folder: `%LOCALAPPDATA%\subtitles` on Windows, `$XDG_CONFIG_HOME/subtitles` or `~/.config/subtitles` elsewhere. This file overrides the defaults of `subtitles/config.toml`, which only contains examples.
+
+The downloads (`[youtube]` table): the folder of the downloaded videos (a Windows path such as `D:/Videos` even when yt-dlp runs in WSL: the tool converts it), the maximum quality (1080p by default, with sound up to 128 kb/s), other yt-dlp options such as `--cookies-from-browser firefox`, and the yt-dlp command. Also in that table: `merge_format` (`mp4`), `retries` (10, for the passing 403 errors of YouTube), `max_audio_kbps`. Your own yt-dlp configuration file is still read (cookies, JavaScript runtime…): these settings replace only its output folder and its format.
+
+## Command line
+
+```
+.venv/bin/python -m subtitles "https://www.youtube.com/watch?v=..."
+.venv/bin/python -m subtitles "https://www.youtube.com/playlist?list=..."   # the whole playlist, as a project
+.venv/bin/python -m subtitles "https://youtu.be/..." "https://www.dailymotion.com/video/..."   # several addresses, as one project
+.venv/bin/python -m subtitles "my list.txt"           # one address per line, as one project
+.venv/bin/python -m subtitles "my video.mp4" --transcription local --translator claude
+.venv/bin/python -m subtitles "D:/Series/Season 1"    # every video of the folder, as a project
+.venv/bin/python -m subtitles --list           # configured engines
+.venv/bin/python -m subtitles "https://youtu.be/..." "D:/Series/Season 1" --stages dl,sub,dub   # the four steps, as on the page
+```
+
+Options: `--output-dir`, `--language en` (spoken language), `--languages fr,de` (target languages), `--transcription <id>`,
+`--translator <id>`, `--redo`, `--no-cleanup`, `--lang en` (language of the messages). The Claude translator needs the `anthropic` SDK (`pip install ".[claude]"`).
+
+**`--stages dl,sub,dub`** (or `download,subtitles,dubbing`, any of them) runs the steps of the page: the entries, mixed
+(addresses, playlists, files, folders, `.txt` lists), make one project, in the download folder and a subfolder named
+after it when there are addresses, otherwise in the folder the files share; `--project-dir` and `--name` choose another
+place, `--no-mkv` the dubbed voice alone, `--order videos` takes each video to its end before the next (step by step by
+default). The downloads show their steps, then the log of each video follows. There is no pause before a translation;
+when the dubbing waits for the graphics card, the command asks you to press Enter. Ctrl+C suspends it; the same command
+resumes it.
+
+Without `--stages`, a folder becomes a project, as in the web page: `dl-sub-dub.project.json` records its progress, and
+running the same command after an interruption (Ctrl+C, power cut) resumes the project. Finished videos are skipped, the
+others start again from their saved transcription. The command does not pause before the translation. Options of a folder:
+`--until translation|dubbing|mux` (last step, the translation by default), `--new-project` (ignores the existing project
+file and lists the folder again), `--no-subfolders`. A `.project.json` file (or an older `.batch.json`) can be given
+too. Exit code: 0 if every video is done, 1 otherwise. Do not run the same project in the web page at the same time.
+
+A playlist address is downloaded into a folder named after it (in the download folder), then that folder is processed
+as a project; running the command again resumes the download, then the project. The address of one video of a playlist
+(`watch?v=…&list=…`) processes that video only, or the whole list with `--playlist`.
+
+Several addresses (videos or playlists) make one project: give them one after the other on the command line, or one per
+line in a `.txt` file (blank lines and lines starting with `#` are ignored). On the page: one per line in the address
+field (Shift+Enter for a new line), or a `.txt` loaded with **List of addresses…** or dropped on the page. The videos
+are downloaded into one folder, named after the file or "List <date>", numbered in the order of the list, then
+processed as a project.
+
+To check in VLC: open the video, the `.fr.srt` of the same name loads by itself (otherwise Subtitle > Add Subtitle
+File). Look at the beginning, the middle and the end: a shift that would grow along the video would point to a rate
+problem (the timings come from the model, not from an estimate).
+
+## The service
+
+- **Automatic stop.** After 60 min without activity (`[web] idle_min`, which can be changed in the Settings, 0 = never), the service stops, and stops the local transcription server it had started.
+  - The delay runs from the end of the work: a task or a project that is running is never interrupted.
+  - A tab left open does not count as activity.
+  - A task or a project **waiting** (pause before translation, Pause) can be cut: the project is resumed from its file, a single video is run again, and in both cases `transcription.json` avoids transcribing again.
+- **State of the service.** `GET /api/health` follows the "local service" contract: busy or not, the activity under way (`video 3/22`), the time before the end of the work and before the stop.
+- **Local AI.** An OpenAI-compatible translator can give a supervision address (`POST /api/ai/start`) that starts the model on demand and stops it at the end of the task. This setting is optional: without it, the server must already run.
+- **File pickers.** They use the dialog of the system: PowerShell on Windows, `osascript` on macOS, `zenity` or `kdialog` on Linux. Without them, type the path.
+
+## Languages of the interface
+
+The page, the task logs, the error messages and the command line are in English and French.
+
+- **Web page**: it follows the language of the browser. The selector at the top of the page fixes it; the choice is saved (`ui_language` setting) and the task logs follow it too.
+- **Command line**: `--lang`, otherwise the `ui_language` setting, otherwise the language of the system.
+- **API**: the header `X-Language: en` (or `fr`) gives the error messages in that language.
+
+**Adding a language** takes one file and no code: copy `subtitles/locales/en.json` to `<code>.json` (for example `de.json`) and translate the values, keeping the `{placeholders}` as they are. A text that depends on a number has one form per plural category (`one`, `other`, plus `few` or `many` for the languages that need them). A missing text falls back to English, and the language shows up in the selector by itself. The names of the languages come from the browser: nothing to translate for them. `pytest` checks that every file has the same keys and the same placeholders as `en.json`.
+
+The names of the settings, the options of the command line and the fields of the API are in English: they are identifiers, not text.
+
+## Transcription server: the contract
+
+The tool needs a server compatible with the OpenAI API that returns word timestamps:
+`POST /v1/audio/transcriptions` with `response_format=verbose_json` and `timestamp_granularities[]=word`, and an answer
+holding `words: [{"word", "start", "end"}]`, on the timeline of the recording. Without that field, the task stops with a
+clear message: a server that returns only segments is not enough. The `/health` route is optional.
+
+The recommended server is [transcription-handy-like](https://github.com/DamienBecherini/transcription-handy-like): it runs the Parakeet Ultra model (0.7 GB, 25 European languages), the one of the measures of this repository. The Docker image `hwdsl2/whisper-server` was only used to check that another server meets the contract, with the small Whisper tiny model, clearly less accurate: it is not a recommendation.

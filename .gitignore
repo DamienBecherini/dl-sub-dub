@@ -4,7 +4,7 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 *.egg-info/
-# Vidéos et audio de travail : jamais dans le dépôt
+# Working videos and audio: never in the repository
 *.mp4
 *.mkv
 *.webm
@@ -12,3 +12,4 @@ __pycache__/
 *.opus
 *.mp3
 *.wav
+tests/failures.log

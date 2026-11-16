@@ -1,0 +1,100 @@
+/* A line of the list unfolded: its tabs (Information, Download, Subtitles, Dubbing, Log) and what each one shows. */
+
+/* --- the tabs: like the tab of a folder, the current one has the colour above it and a tinted background, the others
+   answer to the pointer, so that they read as things to click; on a phone, icons only (the current one keeps its
+   name, still read by a screen reader, and in the bubble) --- */
+.details-tabs .tabs { display: flex; flex-wrap: wrap; gap: 4px; padding: 8px 14px 0 40px; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+  + .details { border-top: 0; padding-top: 12px; }
+  @media (max-width: 720px) { padding-left: 12px; }
+  @media (max-width: 560px) { flex-wrap: nowrap; }
+}
+.tab { border: 0; border-top: 3px solid transparent; border-radius: 8px 8px 0 0; background: none; color: var(--muted); padding: 6px 12px 7px; font-size: 13px;
+  cursor: pointer; display: inline-flex; align-items: center; gap: 6px; position: relative;
+  &:hover:not(.current) { background: color-mix(in srgb, var(--text) 8%, transparent); color: var(--text); }
+  &.current { color: var(--text); border-top-color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, transparent); font-weight: 600; }
+  svg { width: 15px; height: 15px; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  @media (max-width: 560px) {
+    padding: 8px 12px; min-width: 44px; justify-content: center;
+    svg { width: 18px; height: 18px; }
+    &:not(.current) .tab-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  }
+}
+
+/* --- what a tab shows --- */
+.details { border-top: 1px solid var(--border); padding: 12px 14px 14px 40px; display: grid; gap: 12px;
+  h4 { margin: 0 0 6px; font-size: 13px; color: var(--muted); font-weight: 600; }
+  .site { display: flex; gap: 12px; align-items: center;
+    img { width: 128px; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 6px; background: var(--drop); }
+  }
+  /* the settings of a video in two columns: the labels, then their choices, aligned from a field to the next */
+  > label.inline-field { display: grid; grid-template-columns: minmax(150px, 240px) minmax(0, max-content);
+    @media (max-width: 560px) { grid-template-columns: minmax(0, 1fr); }
+  }
+  p.help > button { margin-left: 10px; }         /* a button after a sentence, kept apart from it */
+  @media (max-width: 720px) { padding-left: 12px; }
+}
+/* A log, as a terminal shows it. */
+.terminal { margin: 0; max-height: 260px; overflow: auto; background: var(--log, #0a1115); color: var(--log-text, #c7d5de);
+  font: 12px/1.45 ui-monospace, "Cascadia Mono", Consolas, monospace; padding: 10px 12px; border-radius: 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.log-steps { margin-bottom: 8px; width: fit-content; max-width: 100%;   /* which step's log: buttons in a row */
+  button { padding: 4px 12px; font-size: 13px; flex: none; white-space: nowrap; }
+}
+
+/* Information: the picture, the quality, the tracks inside and the subtitle files next to the video. */
+.media-info {
+  .site img { width: 192px; }
+  .media-name { overflow-wrap: anywhere; }
+  .choice-group p { margin: 0; }
+  @media (max-width: 560px) {
+    .site { flex-direction: column; align-items: flex-start; }
+    .site img { width: 100%; max-width: 320px; }
+  }
+}
+.tracks { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; font-size: 14px; }
+.info-source a { overflow-wrap: anywhere; }
+
+/* Download: the bar of a download (its parts: video, audio, then putting them together), the tracks of the site, the
+   site a video file comes from. */
+.dl-bar { padding: 0 14px 10px 40px; display: grid; gap: 4px;
+  @media (max-width: 720px) { padding-left: 12px; }
+}
+.dl-segments { display: flex; gap: 3px; height: 8px; }
+.dl-segment { flex: 1; background: var(--drop); border-radius: 4px; overflow: hidden; position: relative;
+  &.finish { flex: 0 0 18%; }
+  &.done .dl-fill { background: var(--ok); }
+  &.finish.active .dl-fill { background: repeating-linear-gradient(45deg, var(--accent) 0 8px, var(--bar) 8px 16px);
+    background-size: 22px 22px; animation: dl-stripes 1s linear infinite;
+    @media (prefers-reduced-motion: reduce) { animation: none; }
+  }
+}
+.dl-fill { display: block; height: 100%; background: var(--accent); transition: width .4s ease;
+  @media (prefers-reduced-motion: reduce) { transition: none; }
+}
+@keyframes dl-stripes { from { background-position: 0 0; } to { background-position: 22px 0; } }
+.dl-text { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums;
+  strong { color: var(--text); font-weight: 600; }
+}
+.add-tracks { align-items: center; flex-wrap: wrap; }
+.origin-line { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: baseline; margin: 0 0 8px;
+  code { overflow-wrap: anywhere; }
+}
+.origin-field { display: grid; gap: 6px;
+  .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  input { flex: 1 1 260px; min-width: 0; }
+}
+
+/* Subtitles: a paid translation waiting for the go-ahead, the names to check. */
+.translation-panel, .names-panel { display: grid; gap: 10px; padding: 12px 14px; border: 1px solid var(--attention-border); border-radius: 10px;
+  h3 { margin: 0; font-size: 15px; }
+}
+table.names { border-collapse: collapse; width: 100%; font-size: 14px;
+  th { text-align: left; font-weight: 600; color: var(--muted); font-size: 12px; padding: 4px 6px; }
+  td { padding: 3px 6px; border-top: 1px solid var(--border); }
+  input[type=text] { width: 100%; }
+}
+
+/* Dubbing: the dubbed languages, their boxes and codes under their label; the spoken one greyed, said so. */
+.dub-languages { display: grid; gap: 6px;
+  .help { margin: 0; }
+}
+.check.origin { color: var(--muted); }

@@ -1,13 +1,13 @@
 """Automatic shutdown of the interface after a period without activity (`[web] idle_min`, 0 = never).
 
 Counts as activity: an action of the user (POST or PUT request, loading of the page or of data asked for by hand)
-and all the time a task or a batch is working. Does not count: the regular polling by a tab left open, nor the
-health check of the New Tab page, otherwise the service would never stop.
+and all the time a task or a project is working. Does not count: the regular polling by a tab left open (the projects
+and their events included), nor the health check of the New Tab page, otherwise the service would never stop.
 """
 import re
 import time
 
-_POLLING = re.compile(r"^/api/(health|status|tasks|batches)(/|$)")
+_POLLING = re.compile(r"^/api/(health|status|tasks|projects|projects|dubbing/gpu-check)(/|$)")
 
 
 def is_activity(method: str, path: str) -> bool:
@@ -17,7 +17,7 @@ def is_activity(method: str, path: str) -> bool:
 class IdleWatch:
     def __init__(self, timeout_s, busy, clock=time.monotonic):
         self.timeout_s = timeout_s             # function: read again at each check (a change in Settings applies at once)
-        self.busy = busy                       # function: True as long as a task or a batch is working
+        self.busy = busy                       # function: True as long as a task or a project is working
         self.clock = clock
         self.last = clock()
 

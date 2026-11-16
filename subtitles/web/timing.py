@@ -1,7 +1,7 @@
 """Time left of a piece of work: observed speed, remembered from one session to the next, otherwise the speed given
 in the configuration.
 
-A "pass" is one passage of a video through the queue: 1 = preparation (with the translation if the batch does not
+A "pass" is one passage of a video through the queue: 1 = preparation (with the translation if the project does not
 pause), 2 = translation after a pause, 3 = dubbing and mux. Its weight says what makes its duration vary: seconds of
 video in passes 1 and 3, lines × languages in pass 2. The rate is the number of seconds of computing per unit of weight.
 """

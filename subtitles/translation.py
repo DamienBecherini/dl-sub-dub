@@ -10,6 +10,7 @@ The instructions sent to the model are written in French.
 """
 import json
 import os
+from concurrent.futures import ThreadPoolExecutor
 import re
 import time
 import urllib.error
@@ -19,6 +20,7 @@ from . import config, i18n, language
 
 CLAUDE_CONCURRENCY = 5
 MAX_CONCURRENCY = 20
+MAX_CHUNKS_AT_ONCE = 8
 
 SYSTEM_PROMPT = """Tu es un traducteur professionnel de sous-titres vidéo. Tu traduis en {langue}.
 Règles :
@@ -43,10 +45,14 @@ class TranslationError(Exception):
     pass
 
 
-def format_chunk(texts: list[str], context: list[str]) -> str:
+def format_chunk(texts: list[str], context: list[str], translated: bool = True) -> str:
+    """The lines to translate, numbered from 1, after the two lines before them: translated already, or in the original
+    language when the chunk before is translated at the same time (chunks sent together)."""
     parts = []
     if context:
-        parts.append("Contexte déjà traduit (ne pas le reprendre dans la réponse) :\n" + "\n".join(context))
+        title = ("Contexte déjà traduit (ne pas le reprendre dans la réponse) :" if translated
+                 else "Contexte, les lignes précédentes en langue d'origine (ne pas les traduire ni les reprendre) :")
+        parts.append(title + "\n" + "\n".join(context))
     parts.append("Lignes à traduire :\n" + "\n".join(f"{i + 1}. {t}" for i, t in enumerate(texts)))
     return "\n\n".join(parts)
 
@@ -202,14 +208,17 @@ class ClaudeTranslator:
 def create(m: dict, log=print):
     t = m.get("type", "openai")
     if t == "openai":
-        return OpenAITranslator(m, log)
-    if t == "claude":
-        return ClaudeTranslator(m, log)
-    raise TranslationError(i18n.t("err.unknown_translator_type", type=t))
+        tr = OpenAITranslator(m, log)
+    elif t == "claude":
+        tr = ClaudeTranslator(m, log)
+    else:
+        raise TranslationError(i18n.t("err.unknown_translator_type", type=t))
+    tr.at_once = chunks_at_once(m)                  # chunks of a video sent together (translate_texts)
+    return tr
 
 
 def concurrency(m: dict) -> int:
-    """Videos of a batch translated at once: `parallel` field of the translator, else 5 for Claude (remote API)
+    """Videos of a project translated at once: `parallel` field of the translator, else 5 for Claude (remote API)
     and 1 for the others (a local AI handles only one)."""
     try:
         n = int(m.get("parallel") or (CLAUDE_CONCURRENCY if m.get("type") == "claude" else 1))
@@ -228,19 +237,25 @@ def test(m: dict) -> str:
         tr.finish()
 
 
-def translate_texts(translator, texts: list[str], chunk_size: int = 25, log=print, cancelled=lambda: False,
-                    target: str = "fr", terms: list[str] | None = None, progress=None) -> list[str]:
-    """Translates in order into the `target` language; a line the model did not give back stays as it is (reported)."""
-    system = instructions(target, terms)
-    translator.prepare()
-    result = [None] * len(texts)
-    context: list[str] = []
-    position = 0
-    chunk = chunk_size
-    while position < len(texts):
+def chunks_at_once(m: dict) -> int:
+    """Chunks of one video sent at once (`chunks_at_once` field of the translator, 1 by default): worth it with a
+    server that answers several requests together (llama.cpp with --parallel 2 or more, a remote API)."""
+    try:
+        return max(1, min(int(m.get("chunks_at_once") or 1), MAX_CHUNKS_AT_ONCE))
+    except (TypeError, ValueError):
+        return 1
+
+
+def _in_order(translator, texts: list[str], first: int, result: list, context: list[str], chunk_size: int, system: str,
+              log, cancelled, done=lambda position: None) -> list[str]:
+    """Translates texts[first:] into result, one chunk after the other, each with the two lines translated before it;
+    an incomplete answer: the chunk again, halved. Returns the context after the last chunk."""
+    position, chunk = first, chunk_size
+    end = first + len(texts)
+    while position < end:
         if cancelled():
             raise TranslationError(i18n.t("err.cancelled"))
-        piece = texts[position:position + chunk]
+        piece = texts[position - first:position - first + chunk]
         got = _translate_chunk(translator, piece, context, system)
         missing = [i for i in range(len(piece)) if (i + 1) not in got]
         if missing and chunk > 1:
@@ -253,18 +268,58 @@ def translate_texts(translator, texts: list[str], chunk_size: int = 25, log=prin
                 log("  " + i18n.t("log.line_untranslated", line=position + i + 1, text=t[:60]))
         context = [f"{position + i + 1}. {result[position + i]}" for i in range(max(0, len(piece) - 2), len(piece))]
         position += len(piece)
+        done(position)
+        chunk = min(chunk_size, chunk * 2) if chunk < chunk_size else chunk
+    return context
+
+
+def translate_texts(translator, texts: list[str], chunk_size: int = 25, log=print, cancelled=lambda: False,
+                    target: str = "fr", terms: list[str] | None = None, progress=None) -> list[str]:
+    """Translates in order into the `target` language; a line the model did not give back stays as it is (reported).
+    With `at_once` > 1 on the translator, that many chunks are sent together: the first of them gets the two lines
+    translated before it as context, the others the two lines of the original before them (not translated yet)."""
+    system = instructions(target, terms)
+    translator.prepare()
+    result: list = [None] * len(texts)
+
+    def done(position):
         log("  " + i18n.t("log.translated_progress", done=position, total=len(texts)))
         if progress:
             progress(position, len(texts))
-        chunk = min(chunk_size, chunk * 2) if chunk < chunk_size else chunk
+
+    at_once = max(1, int(getattr(translator, "at_once", 1) or 1))
+    if at_once == 1:
+        _in_order(translator, texts, 0, result, [], chunk_size, system, log, cancelled, done)
+        return result
+    starts = list(range(0, len(texts), chunk_size))
+    context_of = lambda p: [f"{j + 1}. {result[j] if result[j] is not None else texts[j]}"   # noqa: E731
+                            for j in range(max(0, p - 2), p)]
+    with ThreadPoolExecutor(max_workers=at_once, thread_name_prefix="translate") as pool:
+        for w in range(0, len(starts), at_once):
+            if cancelled():
+                raise TranslationError(i18n.t("err.cancelled"))
+            wave = starts[w:w + at_once]
+            jobs = [(p, texts[p:p + chunk_size], context_of(p)) for p in wave]
+            log("  " + i18n.t("log.translating_wave", first=wave[0] + 1, last=min(len(texts), wave[-1] + chunk_size),
+                              n=len(wave)))           # the answers come together: said when they leave
+            answers = [pool.submit(_translate_chunk, translator, piece, ctx, system, p == 0 or result[p - 1] is not None)
+                       for p, piece, ctx in jobs]
+            for (p, piece, ctx), answer in zip(jobs, answers):
+                got = answer.result()
+                if all((i + 1) in got for i in range(len(piece))):
+                    result[p:p + len(piece)] = [got[i + 1] for i in range(len(piece))]
+                else:                          # incomplete: this chunk again, alone and halved, as in order
+                    log("  " + i18n.t("log.chunk_incomplete", n=sum((i + 1) not in got for i in range(len(piece))), size=max(1, chunk_size // 2)))
+                    _in_order(translator, piece, p, result, ctx, max(1, chunk_size // 2), system, log, cancelled)
+            done(min(len(texts), wave[-1] + chunk_size))
     return result
 
 
-def _translate_chunk(translator, piece: list[str], context: list[str], system: str) -> dict[int, str]:
-    answer = translator.complete(system, format_chunk(piece, context))
+def _translate_chunk(translator, piece: list[str], context: list[str], system: str, translated: bool = True) -> dict[int, str]:
+    answer = translator.complete(system, format_chunk(piece, context, translated))
     got = parse_answer(answer, len(piece))
     if len(got) < len(piece):
-        reminder = format_chunk(piece, context) + (f"\n\nRappel : réponds avec exactement {len(piece)} lignes numérotées de 1 à "
+        reminder = format_chunk(piece, context, translated) + (f"\n\nRappel : réponds avec exactement {len(piece)} lignes numérotées de 1 à "
                                                    f"{len(piece)}, une par ligne d'entrée.")
         got = {**parse_answer(translator.complete(system, reminder), len(piece)), **got}
     return got

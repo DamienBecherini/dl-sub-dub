@@ -46,9 +46,10 @@ def _used_keys() -> set[str]:
         text = f.read_text(encoding="utf-8")
         keys |= set(re.findall(r"""["']((?:err|log|state|est|cli|srv|dialog|test|mkv|activity|step|cfg)\.[a-z0-9_.]*[a-z0-9_])["']""", text))
     static = PACKAGE / "web" / "static"
-    for f in static.glob("*.js"):
-        keys |= set(re.findall(r"""["']((?:ui|log|est)\.[a-z0-9_.]*[a-z0-9_])["']""", f.read_text(encoding="utf-8")))
-    keys |= set(re.findall(r'data-i18n(?:-html|-title|-placeholder|-aria-label)?="([^"]+)"', (static / "index.html").read_text(encoding="utf-8")))
+    for f in [*static.glob("*.js"), *(static / "v2").glob("*.js")]:          # not vendor/: third-party code
+        keys |= set(re.findall(r"""["']((?:ui|log|est|v2)\.[a-z0-9_.]*[a-z0-9_])["']""", f.read_text(encoding="utf-8")))
+    for page in ("settings.html", "v2/index.html"):
+        keys |= set(re.findall(r'data-i18n(?:-html|-title|-placeholder|-aria-label)?="([^"]+)"', (static / page).read_text(encoding="utf-8")))
     return keys
 
 

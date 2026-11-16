@@ -1,0 +1,107 @@
+import threading
+
+from subtitles.web import last_project
+from subtitles import __main__ as cli
+from subtitles import folder_cli, config
+from helpers import Run
+from subtitles.project import store
+from subtitles.web.manager import Manager
+from subtitles.web.runs import ProjectRun
+from subtitles.web.tasks import TaskQueue
+
+
+def read(file):
+    return ProjectRun(store.load(file), file)
+
+
+def manager(tmp_path, monkeypatch, run):
+    """Manager whose loop runs, but where each task is simulated by `run(t)` (nothing is transcribed)."""
+    monkeypatch.setattr(last_project, "FILE", tmp_path / "last_project.json")
+    g = Manager(TaskQueue(history=[]), start=False)
+
+    def simulate(t):
+        t.state = "running"
+        run(t)
+        g.projects.task_changed(t)
+    monkeypatch.setattr(g.queue, "_run", simulate)
+    threading.Thread(target=g.queue._loop, daemon=True).start()
+    return g
+
+
+def prepare(tmp_path, monkeypatch, names=("a.mp4", "b.mp4")):
+    videos = tmp_path / "videos"
+    videos.mkdir()
+    for n in names:
+        (videos / n).write_bytes(b"")
+    cfg = {"output_dir": str(tmp_path / "output"), "target_languages": ["fr"], "destination": {"next_to_video": True, "output_dir": False}}
+    monkeypatch.setattr(config, "load", lambda: cfg)
+    return videos, cfg
+
+
+def done(t):
+    t.write("finished: " + t.options["source"])
+    t.state = "done"
+
+
+def test_folder_creates_a_project_and_runs_it_to_the_end(tmp_path, monkeypatch, capsys):
+    videos, cfg = prepare(tmp_path, monkeypatch)
+    g = manager(tmp_path, monkeypatch, done)
+    lines = []
+    code = folder_cli.run(str(videos), cfg, lines.append, languages=["fr", "de"], manager=g)
+    assert code == 0
+    read_back = read(videos / store.FILE_NAME)
+    assert read_back.project.status == "done" and [v["state"] for v in read_back.videos] == ["done", "done"]
+    assert read_back.options["pause"] is False and read_back.options["languages"] == ["fr", "de"]
+    assert any("1/2 : a.mp4" in x for x in lines) and "finished: " in capsys.readouterr().out
+
+
+def test_folder_with_existing_project_resumes_it(tmp_path, monkeypatch):
+    videos, cfg = prepare(tmp_path, monkeypatch)
+    a, b = (str(videos / n).replace("\\", "/") for n in ("a.mp4", "b.mp4"))
+    old = Run(str(videos), [{"path": a, "name": "a.mp4", "language": "", "state": "done", "task": "x", "count": 3, "detected_language": "en", "error": ""},
+                              {"path": b, "name": "b.mp4", "language": "", "state": "running", "task": "y", "count": None, "detected_language": "", "error": ""}],
+                {"translator": "local", "pause": True}, videos / store.OLD_FILE_NAME)
+    old.save()
+    started = []
+    g = manager(tmp_path, monkeypatch, lambda t: (started.append(t.options["source"]), done(t)))
+    assert folder_cli.run(str(videos), cfg, lambda _m: None, translator="claude", manager=g) == 0
+    assert started == [b]                                     # the finished video is skipped
+    read_back = read(videos / store.FILE_NAME)
+    assert read_back.id == old.id and read_back.options["translator"] == "claude" and read_back.options["pause"] is False
+
+
+def test_error_of_a_video_gives_exit_code_1(tmp_path, monkeypatch):
+    videos, cfg = prepare(tmp_path, monkeypatch)
+
+    def fails_on_b(t):
+        if t.options["source"].endswith("b.mp4"):
+            t.state, t.error = "error", "serveur injoignable"
+        else:
+            done(t)
+    g = manager(tmp_path, monkeypatch, fails_on_b)
+    lines = []
+    assert folder_cli.run(str(videos), cfg, lines.append, manager=g) == 1
+    assert any("b.mp4 : serveur injoignable" in x for x in lines)
+
+
+def test_project_of_another_folder_in_the_output_dir_ignored(tmp_path, monkeypatch):
+    videos, cfg = prepare(tmp_path, monkeypatch)
+    other = Run(str(tmp_path / "elsewhere"), [], {}, tmp_path / "output" / store.OLD_FILE_NAME)
+    other.save()
+    assert folder_cli.find_project_file(videos, cfg, None) is None
+    assert folder_cli.find_project_file(other.file, cfg, None) == other.file
+
+
+def test_the_command_sends_a_folder_to_the_project(tmp_path, monkeypatch):
+    videos, _ = prepare(tmp_path, monkeypatch)
+    got = {}
+    monkeypatch.setattr(folder_cli, "run", lambda path, cfg, log, **o: got.update(o, path=path) or 0)
+    assert cli.main([str(videos), "--languages", "fr,en", "--until", "mux", "--no-subfolders"]) == 0
+    assert got["path"] == str(videos) and got["languages"] == ["fr", "en"] and got["stop"] == "mux" and got["recursive"] is False
+
+
+def test_project_summary_gives_the_step_of_the_running_video(tmp_path):
+    read_back = Run("D:/", [{"path": "D:/a.mp4", "name": "a.mp4", "state": "running", "task": "t1"}], {}, tmp_path / store.OLD_FILE_NAME)
+    assert read_back.summary()["step"] == ""                      # no manager plugged in
+    read_back.step_of = {"t1": "translation"}.get
+    assert read_back.phase == 1 and read_back.summary()["step"] == "translation"

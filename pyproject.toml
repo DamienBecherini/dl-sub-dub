@@ -18,6 +18,7 @@ dev = ["pytest", "ruff"]
 [project.scripts]
 subtitles = "subtitles.__main__:main"
 subtitles-web = "subtitles.web.__main__:main"
+dl-sub-dub-mcp = "subtitles.mcp_server:main"
 
 [tool.setuptools.dynamic]
 version = { attr = "subtitles.__version__" }
@@ -27,10 +28,11 @@ include = ["subtitles*"]
 
 [tool.setuptools.package-data]
 subtitles = ["config.toml", "locales/*.json"]
-"subtitles.web" = ["static/*"]
+"subtitles.web" = ["static/*", "static/v2/*", "static/vendor/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = "-ra"          # summary of every failure, error and skip (test name and reason) at the end of the run
 
 [tool.ruff]
 target-version = "py311"

@@ -1,5 +1,6 @@
 import re
 import tomllib
+from pathlib import Path
 
 import pytest
 
@@ -64,6 +65,24 @@ def test_defaults_without_personal_information():
         assert not re.search(pattern, text), pattern
 
 
+def test_no_address_of_a_home_network_nor_path_of_the_author_in_the_repository():
+    """The repository is published: an address of a private network or a path of the author's machine has no place in
+    it, a test included (a test names another machine with an address kept for documentation, 192.0.2.x). The real
+    addresses live in the settings of the user folder, never in the repository."""
+    root = Path(__file__).resolve().parent.parent
+    private = re.compile(r"\b(192\.168|10\.\d{1,3}|172\.(1[6-9]|2\d|3[01]))\.\d{1,3}\.\d{1,3}\b|\b[A-Z]:[/\\](Webdev|Damien|Users[/\\]damie)\b")
+    found = []
+    for f in root.rglob("*"):
+        if f.suffix not in (".py", ".js", ".css", ".html", ".md", ".toml", ".json", ".txt", ".yml", ".yaml", ".sh", ".cfg") \
+                or {".git", ".venv", "__pycache__", "node_modules", ".pytest_cache", ".ruff_cache"} & set(f.relative_to(root).parts) \
+                or f.name == "failures.log":
+            continue
+        for n, line in enumerate(f.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
+            if private.search(line):
+                found.append(f"{f.relative_to(root)}:{n}")
+    assert not found, found
+
+
 def test_consistent_defaults():
     with open(config.DEFAULTS_FILE, "rb") as f:
         cfg = tomllib.load(f)
@@ -71,3 +90,22 @@ def test_consistent_defaults():
     assert config.engine(cfg, "translators", "active_translator")["type"] == "none"
     assert cfg["youtube"]["command"] == ["yt-dlp"]
     assert not any("supervision" in m for m in cfg["translators"])
+
+
+def test_load_is_cached_until_a_file_changes(tmp_path, monkeypatch):
+    """Read once while the files stay the same; a copy each time; read again after save() or another write."""
+    import json as _json
+    user = tmp_path / "config.json"
+    user.write_text(_json.dumps({"output_dir": "A"}), encoding="utf-8")
+    reads = []
+    real = config._read
+    monkeypatch.setattr(config, "_read", lambda d, u: reads.append(1) or real(d, u))
+    a = config.load(user_file=user)
+    a["output_dir"] = "changed by a caller"
+    b = config.load(user_file=user)
+    assert b["output_dir"] == "A" and len(reads) == 1
+    config.save({"output_dir": "B"}, user)
+    assert config.load(user_file=user)["output_dir"] == "B" and len(reads) == 2
+    assert [f.name for f in user.parent.iterdir() if f.name.startswith(user.name)] == [user.name]   # written aside, then put in place
+    user.write_text(_json.dumps({"output_dir": "CC"}), encoding="utf-8")      # written by hand: another size
+    assert config.load(user_file=user)["output_dir"] == "CC" and len(reads) == 3

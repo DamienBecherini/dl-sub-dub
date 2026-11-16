@@ -24,7 +24,10 @@ audio = true                               # extracted audio track (the largest 
 subtitles = true                           # .srt/.vtt copies of the working folder (kept if no destination is ticked)
 transcription = false                      # transcription.json and translation.<language>.json: kept, to add a language without transcribing again
 logs = false                               # task logs; those older than logs_age_h hours are purged when the interface starts
-logs_age_h = 48
+logs_age_h = 48                            # the page offers hours, days or months; stored in hours
+dubbing = false                            # dubbed voices (dubbing/<language>.m4a): kept, the MKV is made again from them
+max_age_days = 0                           # whole working folders not changed for that many days go (0 = no limit)
+max_size_mb = 0                            # then the oldest ones while .work is over that size (0 = no limit)
 
 # --- Transcription servers -------------------------------------------------------------------------------------
 # OpenAI-compatible API: POST /v1/audio/transcriptions, as verbose_json with timestamped words ("words" field).
@@ -48,6 +51,9 @@ key = ""
 # Optional, with the supervision (New Tab page): it starts the local AI if it is stopped.
 # supervision = "http://127.0.0.1:8300"
 # stop_after = true                       # stops it at the end of the task if this tool started it
+# chunks_at_once = 4                      # chunks of a video sent together: llama.cpp with --parallel 4 (np = 4), and
+#                                         # --kv-unified so that one conversation keeps the whole context; measured:
+#                                         # 4 chunks at once translate about twice as fast as 1 (1 by default)
 
 [[translators]]
 id = "claude"
@@ -101,14 +107,31 @@ split_pause = 0.6     # seconds of silence between two words: new "sentence"
 min_gap = 0.08        # seconds between the end of a subtitle and the start of the next one
 reading_cps = 17      # characters per second: comfortable display time
 
-[dubbing]                                  # AI dubbing of the first translated language; separate environment (torch, demucs, omnivoice, soundfile, num2words)
+[dubbing]                                  # AI dubbing of a translated language (the first one by default); separate environment (torch, demucs, omnivoice, soundfile, num2words)
 enabled = false
 command = ["python"]                       # interpreter of that environment; on Windows with WSL: ["wsl", "--", "dubbing/.venv/bin/python"]
 model = "k2-fsa/OmniVoice"                 # Hugging Face id, or local folder as seen by this command
 wsl = false                                # true: Windows paths are given as /mnt/<drive>/…
 steps = 32                                 # generation steps: more = better and slower
+device = "auto"                            # where the voice models run: "auto" (an NVIDIA card, otherwise an Apple chip, otherwise the processor),
+                                           # "cuda", "mps" or "cpu" (the processor: slow)
+gpu_sharing = "auto"                       # a translation model on this machine and the dubbing on the graphics card: "together",
+                                           # "one_at_a_time" (the card is freed before the dubbing), "auto" (the check of the card, otherwise one at a time)
+# free_gpu = { stop = { url = "http://127.0.0.1:8300/api/ai/stop" }, start = { url = "http://127.0.0.1:8300/api/ai/start", body = { engine = "llamacpp" } } }
+                                           # one at a time: addresses called (POST, JSON body) to stop the translation model before the dubbing and start it
+                                           # again after; without them, the supervision of the translator stops its model, an Ollama model is unloaded, any other server is stopped by you when the page asks
+
+[projects]                                 # what a new project starts with (Settings, New projects); each project may change it
+order = "steps"                            # "steps" (every video through one step, then the next) or "videos" (each video to its end)
+dubbing = false                            # the Dubbing step ticked
+review = false                             # AI review of the proper names before translating
+replace = false                            # with the dubbing, the MKV replaces the original video (sent to the recycle bin)
+# pause = true                             # stop before the translation to see its cost; absent: on for a paid translator
+# mkv = false                              # with the dubbing, the dubbed track alone; absent: an MKV with every track
 
 [web]
 port = 4420
 idle_min = 60                              # the interface stops after this time without action or running work (0 = never)
+compact_meta = "below"                     # the compact list: the kind and duration under the title ("below") or after it ("inline")
+notify_button = true                       # the bell of the browser notifications in the header of the page (off until clicked)
 github = "https://github.com/DamienBecherini/dl-sub-dub"   # address of the public repository (link in the page header; greyed out while empty)

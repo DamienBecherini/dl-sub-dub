@@ -1,4 +1,4 @@
-"""Step-by-step flow: review, validation, continuing an episode, batch phases, mux and starting the dubbing."""
+"""Step-by-step flow: review, validation, continuing an episode, project phases, mux and starting the dubbing."""
 import json
 import subprocess
 import sys
@@ -8,9 +8,11 @@ from types import SimpleNamespace
 
 import pytest
 
+from subtitles.web import observed
+from subtitles.web import last_project
 from subtitles import config, dubbing, folder, glossary, muxing, pipeline, review, steps
-from subtitles.web import batch_manager
-from subtitles.web.batches import Batch
+from helpers import Run, update
+from subtitles.web.runs import ProjectRun
 from subtitles.web.manager import Manager
 from subtitles.web.tasks import Task, TaskQueue
 
@@ -40,34 +42,34 @@ def test_candidates_drop_common_words_and_the_possessive():
     assert "Science" not in names
 
 
-def test_a_name_is_submitted_only_once_per_batch(tmp_path):
-    batch = tmp_path / "batch.json"
+def test_a_name_is_submitted_only_once_per_project(tmp_path):
+    run = tmp_path / "project.json"
     t1, t2 = tmp_path / "a", tmp_path / "b"
     t1.mkdir(), t2.mkdir()
     fake = FakeTranslator([[entry(0)], []])
     create = lambda m, j: fake  # noqa: E731
-    assert review.review(CLAUDE, batch, t1, "Episode", ["We saw Gary Iev come."], log=lambda _m: None, create=create) == ["Gary Iev"]
-    assert review.review(CLAUDE, batch, t2, "Episode", ["We saw Gary Iev and Walter Russell speak."], log=lambda _m: None, create=create) == ["Gary Iev"]
+    assert review.review(CLAUDE, run, t1, "Episode", ["We saw Gary Iev come."], log=lambda _m: None, create=create) == ["Gary Iev"]
+    assert review.review(CLAUDE, run, t2, "Episode", ["We saw Gary Iev and Walter Russell speak."], log=lambda _m: None, create=create) == ["Gary Iev"]
     assert "0. Walter Russell" in fake.requests[1] and "Gary Iev (" not in fake.requests[1]
     assert fake.finished
 
 
 def test_validation_feeds_the_glossary_and_releases_the_video(tmp_path):
-    batch = tmp_path / "batch.json"
+    run = tmp_path / "project.json"
     t = tmp_path / "a"
     t.mkdir()
     fake = FakeTranslator([[entry(0), entry(1, status="uncertain", spelling="", french="")]])
-    review.review(CLAUDE, batch, t, "E", ["We saw Gary Iev and Zork Blim come."], log=lambda _m: None, create=lambda m, j: fake)
-    pending = review.pending_names(batch)
+    review.review(CLAUDE, run, t, "E", ["We saw Gary Iev and Zork Blim come."], log=lambda _m: None, create=lambda m, j: fake)
+    pending = review.pending_names(run)
     video = tmp_path / "v.mp4"
     assert steps.observe(t, video, ["fr"], "en", pending)["validated"] is False
-    assert review.validate(batch, [{"transcribed": "Gary Iev", "spelling": "Gariaev", "french": "Gariaev", "accept": True},
+    assert review.validate(run, [{"transcribed": "Gary Iev", "spelling": "Gariaev", "french": "Gariaev", "accept": True},
                                    {"transcribed": "Zork Blim", "spelling": "", "french": "", "accept": False}]) == (1, 1)
-    assert review.pending_names(batch) == set()
+    assert review.pending_names(run) == set()
     assert steps.observe(t, video, ["fr"], "en", set())["validated"] is True
-    assert [e["spelling"] for e in glossary.load(glossary.path_for(batch))] == ["Gariaev"]
+    assert [e["spelling"] for e in glossary.load(glossary.path_for(run))] == ["Gariaev"]
     fake2 = FakeTranslator([])
-    review.review(CLAUDE, batch, t, "E", ["We saw Gary Iev and Zork Blim come."], log=lambda _m: None, create=lambda m, j: fake2)
+    review.review(CLAUDE, run, t, "E", ["We saw Gary Iev and Zork Blim come."], log=lambda _m: None, create=lambda m, j: fake2)
     assert fake2.requests == []                # rejected name: never proposed again
 
 
@@ -75,8 +77,8 @@ def test_a_french_form_does_not_rewrite_the_name(tmp_path):
     t = tmp_path / "a"
     t.mkdir()
     fake = FakeTranslator([[entry(0, status="french_form", spelling="Fingerprints of the Gods", french="Les Empreintes des dieux")]])
-    review.review(CLAUDE, tmp_path / "batch.json", t, "E", ["We read Fingerprints twice."], log=lambda _m: None, create=lambda m, j: fake)
-    assert review.proposals(tmp_path / "batch.json")[0]["spelling"] == "Fingerprints"
+    review.review(CLAUDE, tmp_path / "project.json", t, "E", ["We read Fingerprints twice."], log=lambda _m: None, create=lambda m, j: fake)
+    assert review.proposals(tmp_path / "project.json")[0]["spelling"] == "Fingerprints"
 
 
 def test_api_failure_leaves_the_review_to_redo(tmp_path):
@@ -86,7 +88,7 @@ def test_api_failure_leaves_the_review_to_redo(tmp_path):
     t = tmp_path / "a"
     t.mkdir()
     with pytest.raises(ValueError):
-        review.review(CLAUDE, tmp_path / "batch.json", t, "E", ["We saw Gary Iev come."], log=lambda _m: None, create=lambda m, j: Failure([]))
+        review.review(CLAUDE, tmp_path / "project.json", t, "E", ["We saw Gary Iev come."], log=lambda _m: None, create=lambda m, j: Failure([]))
     assert not (t / review.VIDEO_FILE).exists()
 
 
@@ -120,123 +122,126 @@ def test_the_scan_ignores_the_muxed_mkv(tmp_path):
     assert [v["name"] for v in folder.scan(tmp_path)] == ["a.mp4"]
 
 
-# --- Batch phases and "Continue" ---------------------------------------------------------------------------------
+# --- Project phases and "Continue" ---------------------------------------------------------------------------------
 
 def manager(monkeypatch, tmp_path, with_dubbing=True):
-    monkeypatch.setattr(batch_manager, "LAST_BATCH_FILE", tmp_path / "last_batch.json")
+    monkeypatch.setattr(last_project, "FILE", tmp_path / "last_project.json")
     d = {"enabled": with_dubbing, "command": ["python"], "model": "m"}
     monkeypatch.setattr(config, "load", lambda: {"translators": [CLAUDE], "active_translator": "claude", "output_dir": str(tmp_path), "dubbing": d})
     g = Manager(TaskQueue(history=[]), start=False)
     return g
 
 
-def create_batch(g, tmp_path, states, **options):
+def create_project(g, tmp_path, states, **options):
     videos = [{"path": f"v{i}.mp4", "name": f"v{i}.mp4", "state": e, "task": None, "error": ""} for i, e in enumerate(states)]
-    batch = Batch("r", videos, {"translator": "claude", **options}, tmp_path / "batch.json", "L")
-    g.batches.all["L"] = batch
-    return batch
+    run = Run("r", videos, {"translator": "claude", **options}, tmp_path / "project.json", "L")
+    g.projects.all["L"] = run
+    return run
 
 
-def test_after_the_translation_the_batch_moves_to_dubbing(tmp_path):
-    batch = Batch("r", [{"path": "a", "state": "translated"}, {"path": "b", "state": "done"}], {}, tmp_path / "l.json", "L")
-    batch.phase = 2
-    batch.end_phase()
-    assert (batch.phase, batch.state) == (3, "running")
-    assert batch.next_video()["path"] == "a"
-    batch.videos[0]["state"] = "done"
-    batch.end_phase()
-    assert batch.state == "done"
+def test_after_the_translation_the_project_moves_to_dubbing(monkeypatch, tmp_path):
+    manager(monkeypatch, tmp_path)
+    run = Run("r", [{"path": "a", "state": "translated"}, {"path": "b", "state": "done"}], {"stop": "mux"}, tmp_path / "l.json", "L")
+    run.phase = 2
+    run.end_phase()
+    assert (run.phase, run.state) == (3, "running")
+    assert run.next_item().video == "a"
+    update(run, 0, state="done")
+    run.end_phase()
+    assert run.state == "done"
 
 
 def test_dubbing_phase_one_video_at_a_time_up_to_the_stop(monkeypatch, tmp_path):
     g = manager(monkeypatch, tmp_path)
-    batch = create_batch(g, tmp_path, ["translated", "translated"], stop="mux")
-    batch.phase = 3
-    g.batches._feed(batch)
-    assert [v["state"] for v in batch.videos] == ["running", "translated"]
-    assert g.queue.tasks[batch.videos[0]["task"]].options["until"] == "mux"
+    run = create_project(g, tmp_path, ["translated", "translated"], stop="mux")
+    run.phase = 3
+    g.projects._feed(run)
+    assert [v["state"] for v in run.videos] == ["running", "translated"]
+    assert g.queue.tasks[run.videos[0]["task"]].options["until"] == "mux"
 
 
-def test_translated_video_waits_for_dubbing_only_if_the_batch_asks(monkeypatch, tmp_path):
+def test_translated_video_waits_for_dubbing_only_if_the_project_asks(monkeypatch, tmp_path):
     g = manager(monkeypatch, tmp_path)
-    t = Task({"source": "v", "batch": "L"})
-    assert g.batches._left_to_dub(create_batch(g, tmp_path, ["done"], stop="dubbing"), t) is True
-    assert g.batches._left_to_dub(create_batch(g, tmp_path, ["done"], stop="translation"), t) is False
-    assert g.batches._left_to_dub(create_batch(g, tmp_path, ["done"]), t) is False
+    t = Task({"source": "v", "project": "L"})
+    assert g.projects._left_to_dub(create_project(g, tmp_path, ["done"], stop="dubbing"), t) is True
+    assert g.projects._left_to_dub(create_project(g, tmp_path, ["done"], stop="translation"), t) is False
+    assert g.projects._left_to_dub(create_project(g, tmp_path, ["done"]), t) is False
 
 
 def test_continue_resumes_the_paused_task_to_the_end(monkeypatch, tmp_path):
     g = manager(monkeypatch, tmp_path)
-    batch = create_batch(g, tmp_path, ["prepared", "prepared"], stop="mux")
-    batch.state = "awaiting_translation"
-    t = Task({"source": "v0.mp4", "batch": "L"})
+    run = create_project(g, tmp_path, ["prepared", "prepared"], stop="mux")
+    run.state = "awaiting_translation"
+    t = Task({"source": "v0.mp4", "project": "L"})
     t.state, t.prepared = "paused", SimpleNamespace(cues=[1], code="en")
     g.queue.tasks[t.id] = t
     g.queue.order.append(t.id)
-    batch.videos[0]["task"] = t.id
-    assert g.batches.continue_video("L", "v0.mp4")
+    update(run, 0, task=t.id)
+    assert g.projects.continue_video("L", "v0.mp4")
     assert t.state == "queued" and t.options["until"] == "mux" and t.options["pause"] is False
-    assert [v["state"] for v in batch.videos] == ["running", "prepared"]
-    assert batch.state == "awaiting_translation"
-    assert not g.batches.continue_video("L", "v0.mp4")   # already running
+    assert [v["state"] for v in run.videos] == ["running", "prepared"]
+    assert run.state == "awaiting_translation"
+    assert not g.projects.continue_video("L", "v0.mp4")   # already running
 
 
 def test_continue_without_dubbing_stops_at_the_translation(monkeypatch, tmp_path):
     g = manager(monkeypatch, tmp_path, with_dubbing=False)
-    batch = create_batch(g, tmp_path, ["todo"])
-    assert g.batches.continue_video("L", "v0.mp4")
-    assert g.queue.tasks[batch.videos[0]["task"]].options["until"] == "translation"
+    run = create_project(g, tmp_path, ["todo"])
+    assert g.projects.continue_video("L", "v0.mp4")
+    assert g.queue.tasks[run.videos[0]["task"]].options["until"] == "translation"
 
 
-def test_subtitles_only_batch_never_starts_the_dubbing(monkeypatch, tmp_path):
+def test_subtitles_only_project_never_starts_the_dubbing(monkeypatch, tmp_path):
     g = manager(monkeypatch, tmp_path)
-    batch = create_batch(g, tmp_path, ["todo"], stop="translation")
-    assert g.batches.continue_video("L", "v0.mp4")
-    assert g.queue.tasks[batch.videos[0]["task"]].options["until"] == "translation"
+    run = create_project(g, tmp_path, ["todo"], stop="translation")
+    assert g.projects.continue_video("L", "v0.mp4")
+    assert g.queue.tasks[run.videos[0]["task"]].options["until"] == "translation"
 
 
 def test_dubbing_goal_afterwards_starts_nothing(monkeypatch, tmp_path):
     g = manager(monkeypatch, tmp_path)
-    batch = create_batch(g, tmp_path, ["done", "done", "done"], stop="translation")
-    batch.state = "done"
-    batch.videos[0].update(translated=True)
-    batch.videos[1].update(translated=True, muxed=True)
-    assert g.batches.goal("L", "mux")
-    assert [v["state"] for v in batch.videos] == ["translated", "done", "done"]
-    assert batch.state == "suspended" and not g.queue.tasks
-    assert g.batches.goal("L", "translation")
-    assert [v["state"] for v in batch.videos] == ["done", "done", "done"]
-    assert not g.batches.goal("L", "anything")
+    run = create_project(g, tmp_path, ["done", "done", "done"], stop="translation")
+    run.state = "done"
+    update(run, 0, translated=True)
+    update(run, 1, translated=True, muxed=True)
+    assert g.projects.goal("L", "mux")
+    assert [v["state"] for v in run.videos] == ["translated", "done", "done"]
+    assert run.state == "suspended" and not g.queue.tasks
+    assert g.projects.goal("L", "translation")
+    assert [v["state"] for v in run.videos] == ["done", "done", "done"]
+    assert not g.projects.goal("L", "anything")
 
 
 def test_dubbing_time_announced_only_if_asked(tmp_path):
     videos = [{"path": "a", "state": "translated", "duration": 1000.0}, {"path": "b", "state": "done", "duration": 1000.0, "muxed": True}]
-    batch = Batch("r", videos, {"stop": "translation"}, tmp_path / "l.json", "L")
-    assert batch.dubbing_left_s() == 0
-    batch.options["stop"] = "mux"
-    assert batch.dubbing_left_s() > 0
+    run = Run("r", videos, {"stop": "translation"}, tmp_path / "l.json", "L")
+    assert run.dubbing_left_s() == 0
+    run.options["stop"] = "mux"
+    assert run.dubbing_left_s() > 0
 
 
-def test_reloading_a_batch_keeps_the_videos_to_dub(tmp_path):
-    f = tmp_path / "batch.json"
-    folder.write_batch(f, {"id": "L", "root": "r", "options": {"stop": "mux"}, "state": "running", "videos": [{"path": "a", "state": "translated"}, {"path": "b", "state": "running"}]})
-    assert [v["state"] for v in Batch.from_file(f).videos] == ["translated", "todo"]
+def test_reloading_an_old_project_keeps_the_videos_to_dub(monkeypatch, tmp_path):
+    manager(monkeypatch, tmp_path)
+    f = tmp_path / "subtitles.batch.json"
+    f.write_text(json.dumps({"id": "L", "root": "r", "options": {"stop": "mux"}, "state": "running",
+                             "videos": [{"path": "a", "state": "translated"}, {"path": "b", "state": "running"}]}))
+    assert [v["state"] for v in ProjectRun.from_file(f).videos] == ["translated", "todo"]
 
 
-def test_continue_restarts_a_finished_batch_for_this_video(monkeypatch, tmp_path):
+def test_continue_restarts_a_finished_project_for_this_video(monkeypatch, tmp_path):
     g = manager(monkeypatch, tmp_path)
-    batch = create_batch(g, tmp_path, ["done", "done"])
-    batch.state, batch.phase, batch.finished = "done", 2, 123.0
-    assert g.batches.continue_video("L", "v1.mp4")
-    assert (batch.state, batch.phase, batch.finished) == ("running", 3, None)
-    assert g.queue.tasks[batch.videos[1]["task"]].options["check_names"] is True
+    run = create_project(g, tmp_path, ["done", "done"])
+    run.state, run.phase, run.finished = "done", 2, 123.0
+    assert g.projects.continue_video("L", "v1.mp4")
+    assert (run.state, run.phase, run.finished) == ("running", 3, None)
+    assert g.queue.tasks[run.videos[1]["task"]].options["check_names"] is True
 
 
 def test_the_dubbing_is_never_started_in_parallel(monkeypatch, tmp_path):
     g = manager(monkeypatch, tmp_path)
-    batch = create_batch(g, tmp_path, ["running"])
-    batch.concurrency = 5
-    t = Task({"source": "v", "batch": "L", "until": "mux"})
+    run = create_project(g, tmp_path, ["running"])
+    run.concurrency = 5
+    t = Task({"source": "v", "project": "L", "until": "mux"})
     t.prepared = SimpleNamespace(cues=[], code="en")
     seen = []
     monkeypatch.setattr(g.queue, "_run", lambda x: seen.append(threading.current_thread()), raising=False)
@@ -244,18 +249,18 @@ def test_the_dubbing_is_never_started_in_parallel(monkeypatch, tmp_path):
     assert seen == [threading.current_thread()]
 
 
-def test_reloaded_batch_keeps_the_names_to_validate(monkeypatch, tmp_path):
+def test_reloaded_project_keeps_the_names_to_validate(monkeypatch, tmp_path):
     g = manager(monkeypatch, tmp_path)
-    batch = create_batch(g, tmp_path, ["prepared"], review=True)
-    review._write(review.path_for(batch.file), {"examined": ["Gary Iev"], "proposals": [{"transcribed": "Gary Iev", "spelling": "Gariaev", "occurrences": 2}]})
+    run = create_project(g, tmp_path, ["prepared"], review=True)
+    review._write(review.path_for(run.file), {"examined": ["Gary Iev"], "proposals": [{"transcribed": "Gary Iev", "spelling": "Gariaev", "occurrences": 2}]})
     t = pipeline.work_dir(tmp_path, "v0.mp4")
     t.mkdir(parents=True)
     (t / review.VIDEO_FILE).write_text(json.dumps({"names": ["Gary Iev"]}))
-    g.batches.observe(batch)
-    assert batch.videos[0]["reviewed"] and not batch.videos[0]["validated"]
-    assert [p["transcribed"] for p in g.batches.proposals("L", "v0.mp4")["proposals"]] == ["Gary Iev"]
-    assert g.batches.validate_names("L", [{"transcribed": "Gary Iev", "spelling": "Gariaev", "french": "", "accept": True}]) == {"accepted": 1, "rejected": 0}
-    assert batch.videos[0]["validated"]
+    observed.observe(run)
+    assert run.videos[0]["reviewed"] and not run.videos[0]["validated"]
+    assert [p["transcribed"] for p in g.projects.proposals("L", "v0.mp4")["proposals"]] == ["Gary Iev"]
+    assert g.projects.validate_names("L", [{"transcribed": "Gary Iev", "spelling": "Gariaev", "french": "", "accept": True}]) == {"accepted": 1, "rejected": 0}
+    assert run.videos[0]["validated"]
 
 
 # --- Mux ---------------------------------------------------------------------------------------------------------
@@ -269,9 +274,20 @@ def test_command_keeps_the_tracks_and_adds_the_dubbing():
     t = " ".join(c)
     assert "-map 0:a" in t and "-map 1:a:0" in t and "-map 2:0" in t and "-map 3:0" in t
     assert "-c:v copy" in t and "-c:a copy" in t and "-c:s:0 srt" in t
-    assert "language=eng" in t and "language=fre" in t and "title=Français (doublage IA)" in t
+    assert "language=eng" in t and "language=fre" in t and "title=Français (doublage IA : OmniVoice, dl-sub-dub)" in t
+    assert "title=English" in c and "title=Français (traduction IA)" in c     # each in its language; the spoken one is English
     assert "-c:a aac" not in t                 # the dubbed track is already encoded
 
+
+
+def test_command_with_a_dubbed_voice_per_language():
+    c = muxing.command("ffmpeg", Path("v.mp4"), INFO, [("fr", Path("fr.m4a")), ("de", Path("de.m4a"))], "fr", "en",
+                       [("fr", Path("v.fr.srt"))], Path("s.part"))
+    t = " ".join(c)
+    assert "-i fr.m4a -i de.m4a -i v.fr.srt" in t
+    assert "-map 1:a:0" in t and "-map 2:a:0" in t and "-map 3:0" in t
+    assert "title=Français (doublage IA : OmniVoice, dl-sub-dub)" in t and "language=ger" in t
+    assert "title=Deutsch (AI dub: OmniVoice, dl-sub-dub)" in t                # no German catalog: the words in English
 
 def tools_present():
     from shutil import which
@@ -346,22 +362,22 @@ def test_replaced_video_still_counted_as_muxed(tmp_path):
     assert steps.observe(t, tmp_path / "v.mkv", ["fr"], "en", set())["muxed"]
 
 
-def test_replacement_changes_the_path_of_the_batch_video(monkeypatch, tmp_path):
+def test_replacement_changes_the_path_of_the_project_video(monkeypatch, tmp_path):
     g = manager(monkeypatch, tmp_path)
-    batch = create_batch(g, tmp_path, ["running"], stop="mux", replace=True)
-    t = Task({"source": "v0.mp4", "batch": "L", "until": "mux"})
+    run = create_project(g, tmp_path, ["running"], stop="mux", replace=True)
+    t = Task({"source": "v0.mp4", "project": "L", "until": "mux"})
     t.state, t.prepared, t.result = "done", SimpleNamespace(cues=[1], code="en"), {"mkv": "D:\\x\\v0.mkv", "replaced": True}
-    batch.videos[0]["task"] = t.id
+    update(run, 0, task=t.id)
     g.queue.tasks[t.id] = t
-    g.batches.task_changed(t)
-    assert (batch.videos[0]["path"], batch.videos[0]["name"], batch.videos[0]["state"]) == ("D:/x/v0.mkv", "v0.mkv", "done")
+    g.projects.task_changed(t)
+    assert (run.videos[0]["path"], run.videos[0]["name"], run.videos[0]["state"]) == ("D:/x/v0.mkv", "v0.mkv", "done")
 
 
 def test_subtitles_goal_cancels_the_replacement(monkeypatch, tmp_path):
     g = manager(monkeypatch, tmp_path)
-    batch = create_batch(g, tmp_path, ["done"], stop="mux", replace=True)
-    assert g.batches.goal("L", "translation", True)
-    assert batch.options["replace"] is False
+    run = create_project(g, tmp_path, ["done"], stop="mux", replace=True)
+    assert g.projects.goal("L", "translation", True)
+    assert run.options["replace"] is False
 
 
 # --- Subtitles fixed by hand ---------------------------------------------------------------------------------------
@@ -413,12 +429,45 @@ def dubbing_cfg():
     return {"dubbing": {"enabled": True, "command": [sys.executable], "model": "m"}}
 
 
+def test_the_separation_is_shared_by_the_languages_and_goes_once_the_voices_are_made(monkeypatch, tmp_path):
+    """The voice separated from the background is the same for every language: one folder for them all (not made again
+    for each language, nor after a stop when the language changed), deleted with the leftovers of stopped languages
+    once every voice asked is made."""
+    p = fake_program(tmp_path, "open(t['output'], 'w', encoding='utf-8').write(t['separation_dir'] + '|' + t['temp_dir'])\n")
+    monkeypatch.setattr(dubbing, "WORKER", p)
+    said = {}
+    for code in ("de", "en"):
+        said[code] = dubbing.dub(dubbing_cfg(), Path("v.mp4"), tmp_path, Path("a.srt"), Path("b.srt"), code, log=lambda _m: None).read_text(encoding="utf-8").split("|")
+    assert said["de"][0] == said["en"][0] and Path(said["de"][0]).name == dubbing.SEPARATION
+    assert said["de"][1] != said["en"][1]
+    folder = steps.dubbing_file(tmp_path, "de").parent
+    for d in ("separation", "temp-es/demucs", "temp-en"):
+        (folder / d).mkdir(parents=True)
+        (folder / d / "vocals.wav").write_bytes(b"x")
+    assert dubbing.clear_temporary(tmp_path) == 3
+    assert sorted(f.name for f in folder.iterdir()) == ["de.m4a", "en.m4a"]         # the voices made stay
+    assert dubbing.clear_temporary(tmp_path) == 0
+
+
 def test_dubbing_logs_and_produces_the_file(monkeypatch, tmp_path):
     p = fake_program(tmp_path, "print('» Doublage : 1/1', flush=True)\nprint('noise', flush=True)\nopen(t['output'], 'wb').write(b'x')\n")
     monkeypatch.setattr(dubbing, "WORKER", p)
     lines = []
     r = dubbing.dub(dubbing_cfg(), Path("v.mp4"), tmp_path, Path("a.srt"), Path("b.srt"), "fr", log=lines.append)
     assert r.read_bytes() == b"x" and lines == ["Doublage : 1/1"]
+
+
+def test_a_dubbing_that_writes_nothing_is_stopped_at_once(monkeypatch, tmp_path):
+    """Stop is seen within a second even while the program writes no line (between two progress lines, while it
+    separates the voice or mixes): it used to wait for its next line, up to half a minute."""
+    import time
+    p = fake_program(tmp_path, "import time\ntime.sleep(60)\nopen(t['output'], 'wb').write(b'x')\n")
+    monkeypatch.setattr(dubbing, "WORKER", p)
+    t0 = time.monotonic()
+    with pytest.raises(dubbing.DubbingError, match="annulée"):
+        dubbing.dub(dubbing_cfg(), Path("v.mp4"), tmp_path, Path("a.srt"), Path("b.srt"), "fr", log=lambda _m: None,
+                    cancelled=lambda: time.monotonic() - t0 > 1)
+    assert time.monotonic() - t0 < 10 and not steps.dubbing_file(tmp_path, "fr").exists()
 
 
 def test_dubbing_reports_the_failure(monkeypatch, tmp_path):

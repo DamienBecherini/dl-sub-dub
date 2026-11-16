@@ -1,4 +1,4 @@
-"""States of the tasks, batches, videos of a batch and folder inventories.
+"""States of the tasks, projects, videos of a project and folder inventories.
 
 StrEnum: each member is its own text ("running"), so the JSON files, the API and the page keep the same values, and a
 state read back from a file (plain text) compares equal to its member. A typo in the code is an AttributeError
@@ -20,7 +20,7 @@ ACTIVE_TASK_STATES = (TaskState.QUEUED, TaskState.RUNNING)
 FINISHED_TASK_STATES = (TaskState.DONE, TaskState.ERROR, TaskState.CANCELLED)
 
 
-class BatchState(StrEnum):
+class RunState(StrEnum):
     RUNNING = "running"
     SUSPENDED = "suspended"
     AWAITING_TRANSLATION = "awaiting_translation"
@@ -28,7 +28,7 @@ class BatchState(StrEnum):
     CANCELLED = "cancelled"
 
 
-FINISHED_BATCH_STATES = (BatchState.DONE, BatchState.CANCELLED)
+FINISHED_RUN_STATES = (RunState.DONE, RunState.CANCELLED)
 
 
 class VideoState(StrEnum):

@@ -1,5 +1,6 @@
-"""Makes demo videos: narration (Windows speech synthesis: Hortense in French, Zira in English) over an animated
-gradient background with a title. No outside source, so no copyright involved.
+"""Makes demo videos: narration (Windows speech synthesis: Hortense in French, Zira in English) over a photo that
+slowly zooms in, darkened, with a title. The photos are in backgrounds/ (Unsplash License, credits in
+backgrounds/CREDITS.md); the narration is synthetic, so no other rights are involved.
 The French videos are used for the screenshots of the French README, the English ones for the English README.
 
     python videos_demo.py <output folder> [fr|en]
@@ -48,6 +49,8 @@ VIDEOS = {"fr": VIDEOS_FR, "en": VIDEOS_EN}
 VOICES = {"fr": "Microsoft Hortense Desktop", "en": "Microsoft Zira Desktop"}
 
 FONT = "C\\:/Windows/Fonts/segoeuib.ttf"
+BACKGROUNDS = [Path(__file__).parent / "backgrounds" / n for n in ("01-backups.jpg", "02-self-host.jpg", "03-status-dots.jpg")]
+FPS = 25
 
 
 def speak(text, wav, voice):
@@ -66,13 +69,14 @@ def main():
     for i, (name, title, text) in enumerate(VIDEOS[language]):
         wav = work / f"{i}.wav"
         speak(text, str(wav), VOICES[language])
-        colours = ["0x1d4e89 0x2a9d8f", "0x6a4c93 0x1982c4", "0x264653 0xe76f51"][i]
-        c1, c2 = colours.split()
         ff_title = title.replace("'", "’").replace(":", "\\:")
-        vf = (f"drawtext=fontfile='{FONT}':text='{ff_title}':fontcolor=white:fontsize=64:"
-                  f"x=(w-text_w)/2:y=h*0.32:shadowcolor=black@0.4:shadowx=3:shadowy=3")
+        # slow zoom in (about 10 % over a minute), darkened so that the title and the subtitles stay readable
+        vf = (f"scale=2560:1440,zoompan=z='min(zoom+0.00007,1.12)':d=1:x='iw/2-iw/zoom/2':y='ih/2-ih/zoom/2':"
+              f"s=1280x720:fps={FPS},eq=brightness=-0.12:saturation=0.85,"
+              f"drawtext=fontfile='{FONT}':text='{ff_title}':fontcolor=white:fontsize=64:"
+              f"x=(w-text_w)/2:y=h*0.32:box=1:boxcolor=black@0.45:boxborderw=22")
         subprocess.run(["ffmpeg", "-y", "-loglevel", "error",
-                        "-f", "lavfi", "-i", f"gradients=s=1280x720:c0={c1}:c1={c2}:speed=0.008:r=25",
+                        "-loop", "1", "-framerate", str(FPS), "-i", str(BACKGROUNDS[i]),
                         "-i", str(wav), "-vf", vf, "-shortest", "-c:v", "libx264", "-pix_fmt", "yuv420p",
                         "-c:a", "aac", "-b:a", "128k", str(output / f"{name}.mp4")], check=True)
         print(name)

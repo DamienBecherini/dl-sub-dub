@@ -53,8 +53,8 @@ the virtual environment: after a `git pull`, run it again.
 
 ## 3. A transcription server
 
-The tool sends the audio to a server that returns **word timestamps** (contract in the README, "Transcription
-server requirements"). Check, in this order:
+The tool sends the audio to a server that returns **word timestamps** (contract in `docs/reference.md`, "Transcription
+server: the contract"). Check, in this order:
 
 1. Something answers on `http://127.0.0.1:8000/health`: probably a server already installed. Ask the user.
 2. The user has one on another machine (home server, NAS): ask for its address, and whether it needs an API key
@@ -63,7 +63,7 @@ server requirements"). Check, in this order:
    with Docker: three commands in its quick start, about 1 GB of models downloaded on first start, then
    `{"state":"ready"}` on `/health`. Docker is needed: if it is missing, installing it needs administrator rights,
    so ask. It runs on the processor, no graphics card needed: as a guide, a recent laptop (Core Ultra 9)
-   transcribes about 16 times faster than real time and a small home server (Core i5) about 7 times. On an old or
+   transcribes about 16 times faster than real time and a small home server (4th-generation Core i5) about 7 times. On an old or
    very small machine (2 cores, a Raspberry Pi), suggest running it on another computer of the home instead.
 
 Any OpenAI-compatible server that returns words with `start` and `end` works too. One that returns only segments is
@@ -80,7 +80,7 @@ Ask in one short message:
   - **A local model** already running (llama.cpp, Ollama, LM Studio…): type `openai`, its base address without
     `/v1` (llama.cpp `http://127.0.0.1:8080`, Ollama `http://127.0.0.1:11434`), its model name. Free; slower.
   - **The Claude API**: type `claude`, a paid key from the Anthropic Console stored as a reference (for example
-    `env:ANTHROPIC_API_KEY`), and `pip install ".[claude]"`. A batch stops after transcription to show the
+    `env:ANTHROPIC_API_KEY`), and `pip install ".[claude]"`. A project stops after transcription to show the
     estimated cost before spending anything.
   - **Another OpenAI-compatible API** (OpenAI, Mistral, Groq…): type `openai`, its base address, model, key reference.
 - **Give a recommendation for the translator from what you measured in step 1**, with the reason, then let the
@@ -92,25 +92,24 @@ Ask in one short message:
   |---|---|
   | Graphics card with 8 GB of video memory or more, and 32 GB of RAM or more | A local "mixture of experts" model of about 30 to 35 billion parameters with about 3 billion active, quantized to 4 bits (Q4), run by llama.cpp with the experts in RAM and the rest on the card (llama.cpp `--fit on`, or `--n-cpu-moe`). Example measured on a laptop with an 8 GB RTX 5070 and 32 GB of RAM: Qwen3.6-35B-A3B Q4_K_XL, about 34 tokens/s, good translations. |
   | 16 GB of video memory or more (or Apple Silicon with 32 GB or more) | The same kind of model fully in video memory (faster), or a larger one. |
-  | Smaller card, or 16 GB of RAM | A dense model of 7 to 9 billion parameters in Q4 works, slower and weaker on idioms: fine to try, an API for long batches. |
+  | Smaller card, or 16 GB of RAM | A dense model of 7 to 9 billion parameters in Q4 works, slower and weaker on idioms: fine to try, an API for long projects. |
   | No graphics card, or under 16 GB of RAM | An API (Claude, or another OpenAI-compatible provider). |
 
   **Offer to measure instead of guessing**, if the user wants: with their agreement, start the candidate local
   model and translate a sample of about 25 subtitles (from a test video or a short `.srt` they provide) through
   its OpenAI-compatible API, then report the speed (seconds per subtitle, so the time for a whole video) and show a
   few translated lines so they judge the quality. With an API, the same sample costs about a cent: offer
-  it the same way. Then the user picks, possibly both (a local model for long batches, an API for the episodes
+  it the same way. Then the user picks, possibly both (a local model for long projects, an API for the episodes
   that matter).
 
   Prefer the newest models of these sizes over the names above, which date from November 2026. Installing a
-  model server and downloading a model (several GB) is a change to the machine: ask first. With an API, a batch
+  model server and downloading a model (several GB) is a change to the machine: ask first. With an API, a project
   stops after transcription and shows the estimated cost, so the user decides before spending; suggest trying one
   short video first.
 - Where the `.srt` files go: next to each video (players load them by themselves; the default) and/or in an output
   folder.
 
-Dubbing is optional, off by default, and needs a graphics card and a separate Python environment (README,
-"Dubbing"): mention it only if the user asks.
+Dubbing is optional and off by default: see step 7.
 
 ## 5. Write the settings
 
@@ -142,14 +141,55 @@ Each answers `{"ok": true, …}`, or `{"ok": false, "detail": …}` with the rea
 Then, if the user agrees, subtitle a short video of theirs (a minute is enough) from the page
 `http://127.0.0.1:4420/` and check that the `.srt` appears where expected.
 
-## 7. Tell the user how to use it
+## 7. Dubbing (optional)
+
+It dubs the videos in the translated languages with the original voice cloned. Offer it once, in a sentence, when step
+1 found an NVIDIA graphics card (about 4.3 GB of video memory are used while dubbing; tested on an 8 GB card);
+otherwise mention it only if the user asks. Before installing anything, tell the user:
+
+- **What it takes**: a separate Python environment of about 6 GB (torch with CUDA and its libraries), a voice model
+  of about 3 GB downloaded from Hugging Face on the first dubbing, and a 380 MB speaker model
+  (`microsoft/wavlm-base-plus-sv`) downloaded the same way.
+- **The licences**: the code of [OmniVoice](https://github.com/k2-fsa/OmniVoice) is under Apache 2.0, but its
+  pre-trained model is under **CC BY-NC (non-commercial use)**, and its audio tokenizer under the Boson Higgs Audio 2
+  Community License. The user decides whether that fits what they do with the dubbed videos.
+- **The rights**: a voice is cloned only with the right to use that voice and the content.
+
+Tested on Windows through WSL 2, which is a real Linux (Ubuntu 24.04, Python 3.12, torch 2.15 with CUDA, omnivoice 0.2.1,
+demucs 4.1.0; November 2026). On a Linux machine, the same commands apply directly. On Windows, prefer WSL: without
+it, PyTorch must first be installed with CUDA from the PyTorch index (`pip install torch` alone gives a build without
+the graphics card there), which was not tried. Without an NVIDIA card the tool computes on the chip of an Apple
+Silicon Mac (not tried), otherwise on the processor (tried: about 30 times slower, 18 min for a video of 38 s): say so
+before installing, and see the table of the README ("Dubbing") for what was tried.
+With the user's agreement:
+
+```
+python3 -m venv <dubbing folder>/.venv                       # for example ~/dl-sub-dub-dubbing; inside WSL on Windows
+<dubbing folder>/.venv/bin/pip install omnivoice demucs soundfile num2words
+<dubbing folder>/.venv/bin/python -c "import torch, omnivoice, demucs; print(torch.cuda.is_available())"   # must print True
+```
+
+`ffmpeg` and `ffprobe` must be in the `PATH` of that environment too (inside WSL: `sudo apt install ffmpeg`, ask
+first). Then add the `dubbing` table to the settings (step 5):
+`{"enabled": true, "command": ["<dubbing folder>/.venv/bin/python"], "model": "k2-fsa/OmniVoice"}`; on Windows through
+WSL, `"command": ["wsl", "-d", "<distribution>", "--", "<dubbing folder>/.venv/bin/python"]` and `"wsl": true`.
+
+Check it: when the translator is a local model on the same graphics card, run **Check the graphics card** in the
+settings of a project (it measures whether both fit, about a minute), then dub a short video (a minute) the user has
+the right to use, and let them listen to the result.
+
+## 8. Tell the user how to use it
 
 - The page: `.venv/bin/python -m subtitles.web --open`. It listens on `127.0.0.1` only and stops by itself after
   60 minutes without activity.
-- The command line: `.venv/bin/python -m subtitles "<video, folder, video or playlist address>"`; a folder or a
-  playlist becomes a batch that resumes after an interruption.
+- The command line: `.venv/bin/python -m subtitles "<video, folder, video or playlist address>"` (several addresses,
+  or a `.txt` file with one per line, make one project); a folder or a
+  playlist becomes a project that resumes after an interruption.
 - Downloads (Settings): the folder of the downloaded videos, the maximum quality (1080p by default) and other yt-dlp
   options, such as `--cookies-from-browser firefox` for videos that need an account.
 - Where the settings are, and that **Settings** on the page changes them later.
 - Offer, without insisting, a shortcut to start the page (a desktop shortcut, a shell alias): create it only if
   the user wants one.
+- If the user uses an AI assistant (Claude Desktop, Claude Code…), offer, without insisting, to register the MCP
+  server (`<install folder>/.venv/bin/python -m subtitles.mcp_server`, README "An AI assistant (MCP)"): do it only if
+  they want it.

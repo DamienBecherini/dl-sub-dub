@@ -27,16 +27,35 @@ def name(code: str) -> str:
     return NAMES.get(code, f"langue de code « {code} »")
 
 
+CODE = re.compile(r"[a-z]{2,3}(-[a-z0-9]{2,8})*")
+
+
 def normalize_codes(value) -> list[str]:
-    """Clean list of language codes, without duplicates, from a list or a string "fr, en"."""
+    """Clean list of language codes, without duplicates, from a list (lists inside it too) or a string "fr, en".
+    Only what looks like a code is kept: a list turned into text by mistake ("['en']") is left out."""
     if isinstance(value, str):
         value = re.split(r"[,\s;]+", value)
     seen: list[str] = []
     for v in value or []:
-        c = str(v).strip().lower()
-        if c and c not in seen:
-            seen.append(c)
+        for c in (normalize_codes(v) if isinstance(v, (list, tuple)) else [str(v).strip().lower()]):
+            if CODE.fullmatch(c) and c not in seen:
+                seen.append(c)
     return seen
+
+
+ASK = ("You identify the language of a text taken from the subtitles of a video. Answer with its ISO 639-1 code only "
+       "(two lowercase letters, for example: fr, en, ja), nothing else.")
+
+
+def ask(translator, texts: list[str], chars: int = 1500) -> str:
+    """The language of the texts asked to the translator (a language model), when the function words did not find it
+    (another language, a short or mixed text): its code, or "" if the answer is not one."""
+    sample = " ".join(t for t in texts if t).strip()[:chars]
+    if len(sample.split()) < 3:
+        return ""
+    answer = translator.complete(ASK, sample)
+    m = re.fullmatch(r"\W*(?:code\W*)?([a-z]{2})\W*", (answer or "").strip().lower())    # "ja", "Ja.", "code: ja"; not a sentence
+    return m.group(1) if m and m.group(1) != "xx" else ""
 
 
 def detect(text: str) -> str:
