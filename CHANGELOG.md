@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- One dialog box at a time (File…, Folder…, List of addresses…, Open a project, the folders of the Settings): the
+  clicks while one is open are ignored, and the service refuses a second one (409, from another tab or page) and
+  brings the first to the front, instead of piling boxes up.
+- Run says "Nothing to run" and waits when nothing ticked is left to do (every box unticked, or the steps ticked all
+  done); it named the steps done and started and stopped at once.
+- Run runs what is ticked: the steps of a project are the columns ticked for at least one video (each step for the
+  videos ticked for it), and nothing else. Ticking the column of the dubbing (or one video) after the project was made
+  without it now dubs with Run, once the subtitles are made; before, Run did only the steps chosen in a folded
+  "Steps" block of the settings of the project, and a box ticked outside them was dashed and left aside. That block and
+  the dashed boxes are gone. A new video is ticked for the steps of the project. The project file is schema 2: a
+  project written before is read with its videos unticked for the steps it did not run. `POST
+  /api/projects/<id>/stages` ticks those steps for every video ticked (with the steps they need: the download of an
+  address to subtitle).
 - dl-sub-dub as an application: `python -m subtitles.app` opens the page in a window of its own, with its icon, and
   starts the service without a console if it does not run; `--shortcut` creates the shortcut (Windows Start menu,
   Linux menu of the applications; `desktop` on the desktop too, `remove` removes them). Closing the window stops the

@@ -86,6 +86,16 @@ export async function busy(label, action) {
   finally { update({ busy: "" }); }
 }
 
+/* A dialog box of the system (file, folder, list, project): one at a time, the clicks while one is open are ignored
+   (the service also refuses a second one, from another tab or page, and brings the first to the front). */
+let dialogOpen = false;
+export async function askPath(body) {
+  if (dialogOpen) return undefined;
+  dialogOpen = true;
+  try { return await busy("", () => api("POST", "/api/dialog", body)); }
+  finally { dialogOpen = false; }
+}
+
 // --- formatting ---------------------------------------------------------------------------------------------------
 
 export function duration(s) {

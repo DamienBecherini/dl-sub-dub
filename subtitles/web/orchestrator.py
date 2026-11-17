@@ -12,7 +12,7 @@ import time
 from pathlib import Path
 
 from .. import config, dubbing, language, pipeline, review, source, steps
-from ..project import Event, Item, Project, Stage, StageState, rules, settings, store
+from ..project import STAGES, Event, Item, Project, Stage, StageState, rules, settings, store
 from ..project.choices import (LANGUAGE_KEYS, RECHECK_KEYS, STEP_OF_SETTING, normalized, origin_of, own, stages_for, stop_for,
                                tick_with_needs, until_of)
 from ..states import ACTIVE_TASK_STATES, FINISHED_RUN_STATES, RunState, TaskState, VideoState
@@ -40,7 +40,9 @@ class Orchestrator(Scheduler):
             stages = stages_for(options.get("stop"), any(i.is_address for i in items))
         else:
             options["stop"] = stop_for(stages, options.get("stop"), options.get("mkv"))
-        run = ProjectRun(Project(root, items, options, stages, title), file)
+        project = Project(root, items, options, stages, title)
+        run = ProjectRun(project, file)
+        run.follow_ticks()
         if not start:
             run.state = RunState.SUSPENDED
         return self._open(run)
@@ -103,10 +105,17 @@ class Orchestrator(Scheduler):
             | {origin_of(i) for i in run.project.items if not i.is_address}
         new = [self._new_item(v) for v in videos if (v.get("source") or v.get("path")) not in known]
         with run.lock:
+            # the new videos are ticked for the steps of the project (download and subtitles if none is ticked any
+            # more); an address is downloaded if it is to be subtitled
+            wanted = set(run.project.stages) or {Stage.DOWNLOAD, Stage.SUBTITLES}
+            if Stage.SUBTITLES in wanted:
+                wanted.add(Stage.DOWNLOAD)
+            for item in new:
+                for s in STAGES:
+                    if s not in wanted and item.state(s) == S.TODO:
+                        item.stages[s].selected = False
             run.project.items += new
-            if any(i.is_address for i in new) and not run.project.wants(Stage.DOWNLOAD):
-                run.project.stages = [Stage.DOWNLOAD, *run.project.stages]
-                run.project.__post_init__()
+            run.follow_ticks()
             observed.mark_transcribed(run)
             run.save()
         observed.measure_durations(run, new)
@@ -121,6 +130,7 @@ class Orchestrator(Scheduler):
             for item in run.project.items:
                 if item.id in choices:
                     tick_with_needs(item, stage, bool(choices[item.id]))
+            run.follow_ticks()
             run.save()
         self.queue.wake.set()
         self.fetching.poke.set()
@@ -200,6 +210,7 @@ class Orchestrator(Scheduler):
                 stage = STEP_OF_SETTING.get(k)          # a choice of its own for a step: the video wants that step
                 if v is not None and stage and item.state(stage) not in (S.SKIPPED, S.DONE, S.RUNNING, S.PAUSED):
                     tick_with_needs(item, stage, True)
+            run.follow_ticks()
             run.save()
         return True
 
@@ -288,14 +299,23 @@ class Orchestrator(Scheduler):
 
     # --- actions (False: not possible in the current state) ---
     def set_stages(self, ident: str, stages: list[Stage]) -> bool:
-        """The steps ticked on the diagram (what "Run the ticked steps" runs)."""
+        """These steps for every video ticked (what Run runs is what is ticked): each step asked is ticked where it is
+        left to do, each other step unticked where it has not started (the API, the command line; the page ticks a
+        column instead)."""
         run = self.all.get(ident)
         if not run or run.state == RunState.CANCELLED:
             return False
         with run.lock:
-            run.project.stages = list(stages)
-            run.project.__post_init__()
-            run.options["stop"] = stop_for(run.project.stages, run.options.get("stop"), run.options.get("mkv"))
+            for item in run.project.selected():
+                for s in STAGES:
+                    if s not in stages and item.state(s) == S.TODO:
+                        item.stages[s].selected = False
+                for s in stages:                     # with the steps they need (the download of an address to subtitle)
+                    if item.state(s) not in (S.DONE, S.SKIPPED):
+                        tick_with_needs(item, s, True)
+            if not run.project.items:
+                run.project.stages = [s for s in STAGES if s in stages]
+            run.follow_ticks()
             run.save()
         return True
 
@@ -312,6 +332,8 @@ class Orchestrator(Scheduler):
         if stages is not None and not only:
             self.set_stages(ident, stages)
         with run.lock:
+            if stages is None:
+                run.follow_ticks()
             run.active = list(stages) if only and stages else None
             if run.active and Stage.DUBBING in run.active:
                 run.options["stop"] = stop_for(run.active, run.options.get("stop"), run.options.get("mkv"))
@@ -399,7 +421,13 @@ class Orchestrator(Scheduler):
     @staticmethod
     def _set_stop(run: ProjectRun, stop: str):
         run.options["stop"] = stop
-        run.project.stages = stages_for(stop, run.project.wants(Stage.DOWNLOAD))
+        dub = steps.goes_to(stop, "dubbing")
+        for item in run.project.selected():                  # how far the work goes: the dubbing ticked or not
+            if dub and item.state(Stage.DUBBING) == S.TODO:
+                item.stages[Stage.DUBBING].selected = item.ticked(Stage.SUBTITLES)
+            elif not dub and item.state(Stage.DUBBING) not in (S.RUNNING, S.PAUSED):
+                item.stages[Stage.DUBBING].selected = False
+        run.follow_ticks()
         run.active = None
 
     def _move_transcriptions(self, run: ProjectRun, engine: str):

@@ -88,9 +88,10 @@ def from_batch(d: dict) -> Project:
     settings = {**options, "stop": stop}
     stages = [Stage.SUBTITLES] + ([Stage.DUBBING] if dub else [])
     items = [_item_of_video(v, dub) for v in d["videos"]]
-    return Project(d.get("root") or "", items, settings, stages, id=d.get("id") or new_id(),
-                   created=d.get("created") or time.time(), updated=d.get("updated") or "",
-                   status=d.get("state") or "")
+    project = Project(d.get("root") or "", items, settings, stages, id=d.get("id") or new_id(),
+                      created=d.get("created") or time.time(), updated=d.get("updated") or "",
+                      status=d.get("state") or "")
+    return project
 
 
 FACTS = ("duration", "count", "detected_language", "transcribed", "reviewed", "validated", "translated", "dubbed", "muxed")

@@ -27,7 +27,7 @@ liste ce qui vous protège, vous, vos clés et votre machine, où cela se trouve
 | Une requête trop grosse | Les corps JSON de plus de 5 Mo sont refusés | [`web/router.py`](subtitles/web/router.py), `Request.json` |
 | Un disque plein, un fichier coupé en deux | Place libre vérifiée avant un téléchargement et avant un MKV, avec un message clair | [`space.py`](subtitles/space.py) |
 | Un yt-dlp ancien, ou remplacé à votre insu | Son âge est lu dans sa propre version (rien n'est demandé sur le réseau) ; la mise à jour ne se fait que sur votre clic, par `yt-dlp -U`, qui télécharge sa version officielle depuis ses publications GitHub et la vérifie ; jamais pendant un téléchargement ; installé avec pip ou un paquet, seule la commande est affichée | [`ytdlp.py`](subtitles/ytdlp.py) |
-| Un service oublié en marche | Il s'arrête seul après une heure sans activité (réglage) | [`web/idle.py`](subtitles/web/idle.py) |
+| Un service oublié en marche | Il s'arrête seul après une heure sans activité (réglage) et, démarré par l'application, une fois sa fenêtre fermée et son travail fini (`POST /api/window`, sous les mêmes protections que tout `POST`) | [`web/idle.py`](subtitles/web/idle.py) |
 
 ## Le réseau
 

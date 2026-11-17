@@ -167,6 +167,7 @@ class Scheduler:
                 stop = o.get("stop") if o.get("stop") in ("dubbing", "mux") else "mux"
                 task = self._add_task(run, item, until=stop, pause=False, review=False, continued=True)
             item.tick(stage, True)
+            run.follow_ticks()
             if item.state(stage) == S.SKIPPED:
                 item.apply(stage, E.RESET)             # left out earlier (nothing was translated to dub): it applies now
             item.apply(stage, E.START, task=task.id)
@@ -185,6 +186,7 @@ class Scheduler:
             item.facts["then"] = [s.value for s in chain[1:]]
             for s in chain:
                 item.tick(s, True)
+            run.follow_ticks()
             run.save()
         if self.run_item(ident, item_id, chain[0]):
             return True

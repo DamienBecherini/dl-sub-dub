@@ -38,6 +38,17 @@ check the source before relying on it).
 | The Claude API, with the optional `anthropic` package (MIT) | Translating, reviewing the proper names | Anthropic's terms of service; paid |
 | Another OpenAI-compatible API | Translating | The provider's terms |
 
+### The application window (optional)
+
+Installed with `pip install ".[app]"`, for `python -m subtitles.app`.
+
+| Package | Used for | Licence |
+|---|---|---|
+| [pywebview](https://github.com/r0x0r/pywebview), with bottle and proxy_tools | The window around the page | BSD-3-Clause; bottle and proxy_tools: MIT |
+| pythonnet, clr_loader, cffi, pycparser (Windows, with pywebview) | Reaching the browser engine of Windows | MIT; pycparser: BSD-3-Clause |
+| pywin32 (Windows) | The shortcut of the Start menu | PSF |
+| The browser engine of the system: WebView2 (Windows), WebKit (macOS), GTK or Qt (Linux) | Showing the page | Part of the system, or installed with it |
+
 ### Dubbing (optional)
 
 | Engine | Used for | Licence |

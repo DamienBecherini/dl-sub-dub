@@ -6,7 +6,7 @@
    sites that give it (YouTube, Dailymotion, Vimeo), then yt-dlp reads its details (several seconds per address, a
    few entries at a time) and the line becomes its video, or the videos of its playlist or folder. */
 /* global I18N */
-import { api, busy, duration, getState, html, isAddress, T, tickedStages, Tip, update } from "./lib.js";
+import { api, askPath, busy, duration, getState, html, isAddress, T, tickedStages, Tip, update } from "./lib.js";
 import { useEffect, useRef, useState } from "/static/vendor/preact-htm.js";
 
 /* A phone or a narrow window: the hint of the address field kept short (Shift+Enter means nothing on a phone, and
@@ -123,7 +123,7 @@ export function addEntries(entries) {
 }
 
 async function choose(type) {
-  const d = await busy("", () => api("POST", "/api/dialog", { type }));
+  const d = await askPath({ type });
   const paths = d?.paths?.length ? d.paths : d?.path ? [d.path] : [];       // several files chosen at once (Ctrl)
   if (paths.length) addEntries(paths);
 }
@@ -241,7 +241,7 @@ async function openProject(file) {
 }
 
 async function chooseProject() {
-  const d = await busy("", () => api("POST", "/api/dialog", { type: "project" }));
+  const d = await askPath({ type: "project" });
   if (d?.path) openProject(d.path);
 }
 
@@ -314,7 +314,7 @@ function joinPath(base, name) {
 }
 
 async function pickFolder(start) {
-  const d = await busy("", () => api("POST", "/api/dialog", { type: "project_folder", start }));
+  const d = await askPath({ type: "project_folder", start });
   return d?.path || "";
 }
 

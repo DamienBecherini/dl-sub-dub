@@ -23,9 +23,13 @@ async function api(method, path, body) {
   return d;
 }
 
+let dialogOpen = false;                    // one dialog box at a time: the clicks while one is open are ignored
 async function choosePath(type, startDir = "") {
+  if (dialogOpen) return "";
+  dialogOpen = true;
   try { return (await api("POST", "/api/dialog", { type, start: startDir })).path || ""; }
   catch (err) { $("#settings-message").textContent = err.message; return ""; }
+  finally { dialogOpen = false; }
 }
 
 /* Everything the form (or one category of it) holds, to know whether something was changed and not saved (engines

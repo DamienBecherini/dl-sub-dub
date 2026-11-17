@@ -27,7 +27,7 @@ keys and your machine, where it lives in the code, and what it does not cover.
 | A request too large | JSON bodies over 5 MB are refused | [`web/router.py`](subtitles/web/router.py), `Request.json` |
 | A full disk, a file cut in the middle | Free space checked before a download and before an MKV, with a clear message | [`space.py`](subtitles/space.py) |
 | An old yt-dlp, or one replaced behind your back | Its age is read from its own version (nothing asked on the network); the update runs only on your click, with `yt-dlp -U`, which downloads its official build from its GitHub releases and checks it; never during a download; installed with pip or a package, only the command is shown | [`ytdlp.py`](subtitles/ytdlp.py) |
-| A service left running | It stops by itself after an hour without activity (setting) | [`web/idle.py`](subtitles/web/idle.py) |
+| A service left running | It stops by itself after an hour without activity (setting), and, started by the application, once its window is closed and its work done (`POST /api/window`, under the same protections as every `POST`) | [`web/idle.py`](subtitles/web/idle.py) |
 
 ## The network
 

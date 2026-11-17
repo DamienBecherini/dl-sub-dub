@@ -117,6 +117,7 @@ def test_an_address_without_download_is_blocked(tmp_path):
     p, f, a = project(tmp_path, stages=[SUB])
     assert rules.blocked(p) == [a]
     assert rules.blocked(p, [DL, SUB]) == []                                           # its download runs: it only waits
+    a.tick(DUB, True)
     assert rules.blocked(p, [DUB]) == [a]                                              # the file not subtitled: said in its cell
     a.selected = False
     assert rules.blocked(p) == []

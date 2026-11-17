@@ -12,8 +12,8 @@ import { Finishing, RunControls, RunEstimate } from "./stage.js";
 import { StepMenu, WorkshopScreen } from "./workshop.js";
 import { YtdlpNotice } from "./ytdlp.js";
 
-/* The steps Run runs, said by the service (p.rules.run.steps): those ticked for the project, and the steps before
-   them that ticked videos still need. Before the project exists: those ticked on the page. */
+/* The steps Run runs, said by the service (p.rules.run.steps): those ticked in the list, and the steps before them
+   that ticked videos still need. Before the project exists: those ticked on the page. */
 const runSteps = (s, hasAddresses) => s.project?.rules.run.steps || tickedStages(s, hasAddresses);
 
 /* "Run" over "Download + Subtitles + Dubbing" (smaller): the steps ticked for the project, those the button runs. Two
@@ -25,6 +25,7 @@ const runLabel = (s, hasAddresses) => {
      "Resume: Dubbing"). All of them while nothing says otherwise. */
   const steps = run?.open.length ? run.open : all;
   const resume = !!run?.resume;                          // paused or stopped, with work left to resume
+  if (nothingToRun(s)) return T("v2.nav.nothing");
   if (!steps.length) return T(resume ? "v2.project.resume" : "v2.nav.run");
   return html`<span class="run-verb">${T(resume ? "v2.project.resume" : "v2.nav.run_verb")}</span>
     <span class="run-steps">${steps.map((k) => T("v2.step." + k)).join(" + ")}</span>`;
@@ -32,9 +33,8 @@ const runLabel = (s, hasAddresses) => {
 
 async function run() {
   const s = getState();
-  const hasAddresses = itemsOf(s).some((i) => i.kind === "address");
   if (!s.project) return;
-  const p = await busy("", () => api("POST", `/api/projects/${s.project.id}/start`, { stages: runSteps(s, hasAddresses) }));
+  const p = await busy("", () => api("POST", `/api/projects/${s.project.id}/start`, {}));   // the steps ticked, as the service says
   if (p) update({ project: p });
 }
 
@@ -45,12 +45,17 @@ function newProject() {
            notes: [], error: "" });
 }
 
+/* A project where nothing ticked is left to do (every box unticked, or the steps ticked all done): Run would start
+   and stop at once, so it says so and waits for a box. */
+const nothingToRun = (s) => !!s.project && !s.project.rules.run.open.length && !s.project.rules.run.resume;
+
 /* Run, and next to it ▾: one step only, for the videos ticked for it ("Only subtitle (2 to do)"). */
 function RunButton({ s, p, ticked, hasAddresses }) {
   const [menu, setMenu, box] = useMenu();
   return html`
     <span class="run-split" ref=${box}>
-      <button type="button" class="primary run-main" disabled=${!p || !ticked || !!s.busy} title=${T("v2.nav.run_title")} onClick=${run}>${runLabel(s, hasAddresses)}</button>
+      <button type="button" class="primary run-main" disabled=${!p || !ticked || !!s.busy || nothingToRun(s)}
+              title=${T(nothingToRun(s) ? "v2.nav.nothing_title" : "v2.nav.run_title")} onClick=${run}>${runLabel(s, hasAddresses)}</button>
       ${p && html`
         <button type="button" class="primary run-more" aria-haspopup="menu" aria-expanded=${menu} title=${T("v2.nav.one_step")}
                 aria-label=${T("v2.nav.one_step")} disabled=${!!s.busy || p.state === "cancelled"} onClick=${() => setMenu(!menu)}>▾</button>

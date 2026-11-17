@@ -18,6 +18,7 @@ from pathlib import Path
 from .. import config, dubbing, estimation, gpu, i18n, steps
 from ..project import Event, Item, Project, Stage, StageState, rules, settings, stages, store
 from ..states import RunState, VideoState
+from ..project.choices import stop_for
 from . import timing
 
 S = StageState
@@ -159,6 +160,15 @@ class ProjectRun:
                 resolved[key] = settings.resolve(cfg, self.project, item)
             return resolved[key]
         return rules.Context(of, available, str(self.state), self.started(), sharing, self.options.get("language") or "")
+
+    def follow_ticks(self):
+        """The steps of the project are the ones ticked for at least one video (rules.ticked_steps), and how far the
+        work goes follows: to the MKV when a video is to dub. Called after every change of the ticks."""
+        if self.project.items:                 # an empty project keeps the steps it was made with, for its first videos
+            self.project.stages = rules.ticked_steps(self.project)
+        stop = stop_for(self.project.stages, self.options.get("stop"), self.options.get("mkv"))
+        if self.options.get("stop") or stop != "translation":       # "translation", the default, is not written
+            self.options["stop"] = stop
 
     def wants(self, stage: Stage) -> bool:
         """The step is run now: one of the steps ticked on the diagram, or the one step started from its screen."""
@@ -406,6 +416,7 @@ class ProjectRun:
         if file.name != store.FILE_NAME:
             file = file.with_name(store.FILE_NAME)
         run = cls(project, file)
+        run.follow_ticks()
         left = any(item.ticked(s) and item.state(s) not in (S.DONE, S.SKIPPED) for item in project.selected() for s in project.stages)
         run.state = RunState.SUSPENDED if left else RunState.DONE      # a finished project opened again stays finished
         return run

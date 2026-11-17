@@ -158,8 +158,8 @@ Sous Windows, dans toutes les commandes de cette page, `.venv/bin/python` s'écr
 
 ### Désinstaller
 
-1. Arrêtez le service, puis supprimez le dossier d'installation (il contient l'environnement `.venv`).
-2. Supprimez le dossier des réglages : `%LOCALAPPDATA%\subtitles` sous Windows, `~/.config/subtitles` ailleurs (réglages, historique, vitesses mesurées, miniatures).
+1. Arrêtez le service. Si vous avez créé le raccourci de l'application, enlevez-le d'abord : `.venv/bin/python -m subtitles.app --shortcut remove`. Puis supprimez le dossier d'installation (il contient l'environnement `.venv`).
+2. Supprimez le dossier des réglages : `%LOCALAPPDATA%\subtitles` sous Windows, `~/.config/subtitles` ailleurs (réglages, historique, vitesses mesurées, miniatures, taille et mémoire de la fenêtre de l'application).
 3. Supprimez le dossier de travail `.work` du dossier de sortie (par défaut `~/Videos/subtitles`).
 4. Dans les dossiers de vos projets, `dl-sub-dub.project.json` et `subtitles.glossary.json` peuvent partir. Les vidéos, les `.srt`, les `.vtt` et les MKV sont à vous : rien ne les supprime.
 5. Si vous aviez installé le doublage : son environnement Python, et les modèles téléchargés dans `~/.cache/huggingface/hub` (OmniVoice, environ 3 Go ; WavLM) et `~/.cache/torch/hub` (demucs).
@@ -312,7 +312,7 @@ pas d'authentification : elle n'écoute que sur la machine elle-même, et refuse
 | `POST /api/projects/load` `{file}` puis `POST /api/projects/<id>/resume` | reprendre d'après un `dl-sub-dub.project.json` (ou un ancien `subtitles.batch.json`) |
 | `POST /api/projects/<id>/suspend`, `stop`, `cancel`, `translate` | piloter un projet (`suspend` : après la vidéo en cours ; `stop` : tout de suite, la vidéo revient dans la liste) |
 | `POST /api/projects/<id>/location` `{title?, base?, named?}` | renommer le projet ; le déplacer tant que rien n'a commencé |
-| `POST /api/projects/<id>/start` `{stages?, only?}`, `/select`, `/settings`, `/items/<item>/run` `{stage}` (ou `{stages}` : l'une après l'autre), `/items/<item>/cancel` | lancer des étapes, cocher, réglages, une vidéo une étape (ou plusieurs à la suite) |
+| `POST /api/projects/<id>/start` `{stages?, only?}` (sans `stages` : les étapes cochées), `/select`, `/settings`, `/items/<item>/run` `{stage}` (ou `{stages}` : l'une après l'autre), `/items/<item>/cancel` | lancer des étapes, cocher, réglages, une vidéo une étape (ou plusieurs à la suite) |
 | `GET /api/projects/<id>/items/<item>/log` | le journal du téléchargement d'une vidéo |
 | `GET /api/health` | occupé ou non, activité, temps restant ([référence](docs/reference.fr.md#le-service)) |
 
@@ -332,7 +332,7 @@ curl -s localhost:4420/api/projects/<id>
 - **L'original est respecté.** Le MKV est créé à côté de la vidéo, sans réencodage. Une option le met à sa place ; l'original part alors à la corbeille.
 - **Un fichier téléchargé garde son adresse.** Ajouté plus tard à un autre projet, il propose encore les pistes audio et les sous-titres de son site (onglet Téléchargement de sa ligne), et coller son adresse dans ce projet ne le télécharge pas une seconde fois.
 - **Les noms de fichiers.** Une vidéo téléchargée porte son titre. Les caractères qu'un disque refuse sont remplacés par yt-dlp, et un titre trop long pour un nom de fichier est raccourci.
-- **Le service s'arrête seul** après 60 minutes sans activité (réglable) ; un travail en cours n'est jamais interrompu.
+- **Le service s'arrête seul** après 60 minutes sans activité (réglable) ou, démarré par l'application, une fois sa fenêtre fermée ; un travail en cours n'est jamais interrompu.
 - **Ce qui sort de votre machine.** Rien, sauf ce que vous choisissez : les sites des vidéos (yt-dlp), l'audio vers votre serveur de transcription s'il est sur une autre machine, le texte des sous-titres vers une API de traduction si vous en utilisez une, et le téléchargement des modèles de doublage. Pas de télémétrie ; le service n'écoute que sur `127.0.0.1` ([Sécurité](SECURITY.fr.md)).
 - **Où sont vos données.** Les réglages dans `config.json` du dossier utilisateur (`%LOCALAPPDATA%\subtitles` sous Windows, `~/.config/subtitles` ailleurs) ; chaque projet dans un `dl-sub-dub.project.json` de son dossier ; les fichiers de travail dans `.work` du dossier de sortie.
 

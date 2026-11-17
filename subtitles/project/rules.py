@@ -179,6 +179,12 @@ def open_step(item: Item, stage: Stage) -> bool:
     return item.ticked(stage) and item.state(stage) not in FINISHED
 
 
+def ticked_steps(project: Project) -> list[Stage]:
+    """The steps of the project: those ticked for at least one video (done or not), in the order they run. A column
+    ticked is a step Run runs; nothing else says it."""
+    return [s for s in STAGES if any(i.ticked(s) and applies(i, s) for i in project.items)]
+
+
 def run_steps(project: Project) -> list[Stage]:
     """The steps Run runs: those ticked for the project (the download only with addresses), and the steps before them
     that ticked videos still need (a video to dub whose subtitles are not made: Subtitles too), so that nothing

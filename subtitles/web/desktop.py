@@ -5,6 +5,7 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 from .. import i18n
@@ -12,6 +13,8 @@ from .router import RequestError
 
 
 _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+_ONE_DIALOG = threading.Lock()                 # one dialog box at a time, whatever asks (several clicks, tabs, pages)
+_open_dialog: subprocess.Popen | None = None   # the one open, to bring it to the front
 _TITLES = {"file": "dialog.pick_video", "project": "dialog.pick_project", "source_folder": "dialog.source_folder",
            "download_folder": "dialog.download_folder", "project_folder": "dialog.project_folder",
            "addresses": "dialog.pick_addresses"}   # any other kind: the output folder
@@ -68,23 +71,65 @@ def _paths(out: str) -> list[str]:
     return [p.rstrip("/") or p for p in (line.strip() for line in out.splitlines()) if p]
 
 
+def _run(command: list[str], **kw) -> tuple[int, str]:
+    """Runs the program of a dialog box, kept in `_open_dialog` while it is open; its code and what it wrote."""
+    global _open_dialog
+    p = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL, text=True,
+                         encoding="utf-8", errors="replace", **kw)
+    _open_dialog = p
+    try:
+        out, _ = p.communicate(timeout=600)
+    except subprocess.TimeoutExpired:
+        p.kill()
+        out, _ = p.communicate()
+    finally:
+        _open_dialog = None
+    return p.returncode, out or ""
+
+
+def _to_front(p: subprocess.Popen | None):
+    """Brings the dialog box already open to the front (Windows: its windows, found by the process that shows them;
+    Windows may only make its button flash in the taskbar)."""
+    if p is None or os.name != "nt":
+        return
+    import ctypes
+    from ctypes import wintypes
+    u = ctypes.windll.user32
+
+    @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    def each(h, _):
+        pid = wintypes.DWORD()
+        u.GetWindowThreadProcessId(h, ctypes.byref(pid))
+        if pid.value == p.pid and u.IsWindowVisible(h):
+            u.ShowWindow(h, 9)                                 # SW_RESTORE
+            u.SetForegroundWindow(h)
+        return True
+    u.EnumWindows(each, 0)
+
+
 def _unix_dialog(kind: str, start: str) -> list[str]:
     command = dialog_command(kind, start)
     if command is None:
         raise RequestError(501, i18n.t("err.no_dialog"))
-    r = subprocess.run(command, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=600)
-    return _paths(r.stdout) if r.returncode == 0 else []     # non-zero code: choice cancelled
+    code, out = _run(command)
+    return _paths(out) if code == 0 else []                  # non-zero code: choice cancelled
 
 
 def dialog(kind: str, start: str = "") -> list[str]:
     """System dialog box, in the foreground (Windows: PowerShell in STA mode): the paths chosen (several for the
-    videos and the lists of addresses), none if cancelled."""
-    if os.name != "nt":
-        return _unix_dialog(kind, start)
-    command, env = windows_dialog(kind, start)
-    r = subprocess.run(command, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=600,
-                       creationflags=_NO_WINDOW, env={**os.environ, **env})
-    return _paths(r.stdout.replace("\\", "/"))
+    videos and the lists of addresses), none if cancelled. One at a time: while one is open, it is brought to the
+    front and the request is refused (409), instead of a second box over the first."""
+    if not _ONE_DIALOG.acquire(blocking=False):
+        _to_front(_open_dialog)
+        raise RequestError(409, i18n.t("err.dialog_open"))
+    try:
+        if os.name != "nt":
+            return _unix_dialog(kind, start)
+        command, env = windows_dialog(kind, start)
+        _code, out = _run(command, creationflags=_NO_WINDOW, env={**os.environ, **env})
+        return _paths(out.replace("\\", "/"))
+    finally:
+        _ONE_DIALOG.release()
 
 
 def windows_dialog(kind: str, start: str = "") -> tuple[list[str], dict]:

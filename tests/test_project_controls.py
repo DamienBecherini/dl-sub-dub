@@ -46,16 +46,14 @@ def test_a_download_ticked_meanwhile_starts_without_the_queue(g, tmp_path):
     assert g.queue.tasks == {}                                                    # nothing given to the queue
 
 
-def test_the_downloads_join_a_project_running_other_steps(g, tmp_path):
+def test_an_address_to_subtitle_is_downloaded_with_the_project(g, tmp_path):
     video = folder(tmp_path) / "local.mp4"
     video.write_bytes(b"x")
     run = g.projects.create(folder(tmp_path).as_posix(), [{"source": A}, {"path": video.as_posix()}], {"pause": False},
                            title="List", stages=[Stage.SUBTITLES])
-    assert run.state == RunState.RUNNING and not run.wants(Stage.DOWNLOAD)
-    g.projects.fetching.feed_all()
-    assert run.project.items[0].state(Stage.DOWNLOAD) == S.TODO
-    assert g.projects.start(run.id, [Stage.DOWNLOAD], only=True)
-    assert run.wants(Stage.DOWNLOAD) and run.project.stages == [Stage.SUBTITLES]      # the diagram is not changed
+    # the subtitles of an address need its video: its download stays ticked, so it is one of the steps of the project
+    assert run.state == RunState.RUNNING and run.wants(Stage.DOWNLOAD)
+    assert run.project.stages == [Stage.DOWNLOAD, Stage.SUBTITLES]
     g.projects.fetching.feed_all()
     assert run.project.items[0].state(Stage.DOWNLOAD) == S.RUNNING
 

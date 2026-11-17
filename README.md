@@ -157,8 +157,8 @@ On Windows, in every command of this page, `.venv/bin/python` is written `.venv/
 
 ### Uninstall
 
-1. Stop the service, then delete the install folder (it holds the `.venv` environment).
-2. Delete the settings folder: `%LOCALAPPDATA%\subtitles` on Windows, `~/.config/subtitles` elsewhere (settings, history, measured speeds, thumbnails).
+1. Stop the service. If you created the shortcut of the application, remove it first: `.venv/bin/python -m subtitles.app --shortcut remove`. Then delete the install folder (it holds the `.venv` environment).
+2. Delete the settings folder: `%LOCALAPPDATA%\subtitles` on Windows, `~/.config/subtitles` elsewhere (settings, history, measured speeds, thumbnails, the size and storage of the window of the application).
 3. Delete the working folder `.work` of the output folder (by default `~/Videos/subtitles`).
 4. In the folders of your projects, `dl-sub-dub.project.json` and `subtitles.glossary.json` can go. The videos, the `.srt`, the `.vtt` and the MKV are yours: nothing deletes them.
 5. If you had installed the dubbing: its Python environment, and the models downloaded into `~/.cache/huggingface/hub` (OmniVoice, about 3 GB; WavLM) and `~/.cache/torch/hub` (demucs).
@@ -309,7 +309,7 @@ The web page uses a local JSON API on `http://127.0.0.1:4420`, which scripts can
 | `POST /api/projects/load` `{file}` then `POST /api/projects/<id>/resume` | resume from a `dl-sub-dub.project.json` (or an older `subtitles.batch.json`) |
 | `POST /api/projects/<id>/suspend`, `stop`, `cancel`, `translate` | control a project (`suspend`: after the running video; `stop`: now, the video goes back to the list) |
 | `POST /api/projects/<id>/location` `{title?, base?, named?}` | rename the project; move it while nothing has started |
-| `POST /api/projects/<id>/start` `{stages?, only?}`, `/select`, `/settings`, `/items/<item>/run` `{stage}` (or `{stages}`: one after the other), `/items/<item>/cancel` | run steps, tick, settings, one video one step (or several in a row) |
+| `POST /api/projects/<id>/start` `{stages?, only?}` (without `stages`: the steps ticked), `/select`, `/settings`, `/items/<item>/run` `{stage}` (or `{stages}`: one after the other), `/items/<item>/cancel` | run steps, tick, settings, one video one step (or several in a row) |
 | `GET /api/projects/<id>/items/<item>/log` | the log of the download of a video |
 | `GET /api/health` | busy or not, activity, time left ([reference](docs/reference.md#the-service)) |
 
@@ -329,7 +329,7 @@ curl -s localhost:4420/api/projects/<id>
 - **The original is respected.** The MKV is made next to the video, without re-encoding. An option puts it in its place; the original then goes to the recycle bin.
 - **A downloaded file keeps its address.** Added later to another project, it still offers the audio tracks and the subtitles of its site (Download tab of its line), and pasting its address into that project does not download it a second time.
 - **File names.** A downloaded video is named after its title. The characters a disk refuses are replaced by yt-dlp, and a title too long for a file name is shortened.
-- **The service stops by itself** after 60 minutes without activity (it can be changed); running work is never interrupted.
+- **The service stops by itself** after 60 minutes without activity (it can be changed), or, started by the application, once its window is closed; running work is never interrupted.
 - **What leaves your machine.** Nothing but what you choose: the sites of the videos (yt-dlp), the audio to your transcription server if it is on another machine, the text of the subtitles to a translation API if you use one, and the download of the dubbing models. No telemetry; the service listens on `127.0.0.1` only ([Security](SECURITY.md)).
 - **Where your data is.** The settings in `config.json` in the user folder (`%LOCALAPPDATA%\subtitles` on Windows, `~/.config/subtitles` elsewhere); each project in a `dl-sub-dub.project.json` in its folder; the working files in `.work` of the output folder.
 

@@ -73,8 +73,6 @@
   h2 { margin: 0; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
   .location, .project-editor, .project-place { margin: 0; }
 }
-.steps-choice { display: flex; flex-wrap: wrap; gap: 8px 20px; align-items: center; }
-.step-choice.greyed { color: var(--muted); }
 .order-choice { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 8px; }
 .order-option { display: flex; gap: 10px; align-items: flex-start; border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; cursor: pointer;
   &.chosen { border-color: var(--accent); }

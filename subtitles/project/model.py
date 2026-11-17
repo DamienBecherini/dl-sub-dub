@@ -14,7 +14,7 @@ import uuid
 from dataclasses import dataclass, field
 from enum import StrEnum
 
-SCHEMA = 1                                         # version of the project file
+SCHEMA = 2                                         # version of the project file (2: the steps of the project are the ticked ones)
 LOG = logging.getLogger(__name__)
 
 
@@ -184,7 +184,8 @@ class Project:
 
     `folder`: where the downloaded videos go, and the source folder when the videos come from one. `settings`: the
     choices of the project (engines, languages, destination of the files, pause before a paid translation…), on top of
-    the configuration; an item may override them. `stages`: the steps ticked on the diagram, in the order they run."""
+    the configuration; an item may override them. `stages`: the steps ticked for at least one video, in the order they
+    run (what Run runs; ProjectRun.follow_ticks keeps them so)."""
     folder: str
     items: list[Item] = field(default_factory=list)
     settings: dict = field(default_factory=dict)
@@ -198,6 +199,7 @@ class Project:
 
     def __post_init__(self):
         self.stages = [s for s in STAGES if s in self.stages]          # always in the order they run
+        self.untick_outside()
 
     def item(self, ident: str) -> Item | None:
         return next((i for i in self.items if i.id == ident), None)
@@ -211,6 +213,19 @@ class Project:
     def wants(self, stage: Stage) -> bool:
         return stage in self.stages
 
+    def untick_outside(self):
+        """The ticks of the videos made to say what the project runs: a step that is not one of `stages` and not
+        started is unticked on each video, unless a step of `stages` still needs it (the download of an address to
+        subtitle, the subtitles of a video to dub). Before schema 2, a video was ticked for every step and the steps of
+        the project alone said what Run ran (a project that did not dub had its videos ticked for the dubbing)."""
+        for item in self.items:
+            pending = [s for s in STAGES if item.state(s) not in (StageState.DONE, StageState.SKIPPED)]
+            last = max((STAGES.index(s) for s in self.stages if s in pending and item.stages[s].selected), default=-1)
+            needed = {s for s in pending if STAGES.index(s) <= last}
+            for s in STAGES:
+                if s not in self.stages and s not in needed and item.state(s) == StageState.TODO:
+                    item.stages[s].selected = False
+
     def to_dict(self) -> dict:
         return {"schema": SCHEMA, "id": self.id, "title": self.title, "folder": self.folder, "stages": list(self.stages),
                 "settings": self.settings, "created": self.created, "updated": self.updated, "status": self.status, "ran": self.ran,
@@ -222,7 +237,8 @@ class Project:
     def from_dict(cls, d: dict) -> "Project":
         settings = dict(d.get("settings") or {})
         old = {k: settings.pop(k) for k in cls.RUN_KEYS if k in settings}     # written among the settings by older versions
-        return cls(d["folder"], [Item.from_dict(i) for i in d.get("items") or []], settings,
-                   [Stage(s) for s in d.get("stages") or [Stage.SUBTITLES] if s in Stage.__members__.values()],
-                   d.get("title") or "", d.get("id") or new_id(), d.get("created") or time.time(), d.get("updated") or "",
-                   d.get("status") or "", bool(d.get("ran") or old.get("ran")))
+        project = cls(d["folder"], [Item.from_dict(i) for i in d.get("items") or []], settings,
+                      [Stage(s) for s in d.get("stages", [Stage.SUBTITLES]) or [] if s in Stage.__members__.values()],
+                      d.get("title") or "", d.get("id") or new_id(), d.get("created") or time.time(), d.get("updated") or "",
+                      d.get("status") or "", bool(d.get("ran") or old.get("ran")))
+        return project

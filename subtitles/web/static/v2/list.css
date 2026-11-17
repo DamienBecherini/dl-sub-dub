@@ -101,14 +101,12 @@
 .step-cells { --cell: 172px; display: grid; gap: 6px;
   @media (max-width: 900px) { --cell: minmax(0, 1fr); flex: 1 1 100%; }
 }
-/* A cell: its box, its name, its state; unticked or outside the project, said by the dashed border and the muted
-   name, never by a faded text (contrast). Running: its percent and time left, a thin bar at the bottom of it. */
+/* A cell: its box, its name, its state; unticked, said by the muted chip, never by a faded text (contrast). Running: its percent and time left, a thin bar at the bottom of it. */
 .step-cell { display: flex; align-items: center; gap: 5px; font-size: 12px; border: 1px solid var(--border); border-radius: 6px; padding: 3px 6px;
   min-width: 0; position: relative;
   input { width: auto; flex: none; margin: 0; }
   .chip { margin-left: auto; font-size: 11px; padding: 0 6px; }
-  &.off .chip, &.outside .chip { opacity: .7; }
-  &.outside { border-style: dashed; }
+  &.off .chip { opacity: .7; }
   &.na { border-color: transparent; }
   &.measured .chip { font-variant-numeric: tabular-nums; white-space: nowrap; }
   &.done {                                        /* a green mark instead of its box, the name in the colour of the text */
@@ -200,7 +198,6 @@ button.icon-act { width: 34px; height: 30px; min-height: 0; padding: 0; display:
 .step-pills { --pill: 80px; display: grid; gap: 6px 4px; align-items: center; }   /* box, mark and "42 %" */
 .compact-cell { display: inline-flex; align-items: center; gap: 8px; min-width: 0;
   input { width: 16px; height: 16px; margin: 0; flex: none; }
-  &.outside input { outline: 1px dashed var(--muted); outline-offset: 2px; }   /* outside the project */
   @media (pointer: coarse) {
     gap: 14px;
     input { width: 24px; height: 24px; }
@@ -287,7 +284,6 @@ button.icon-act { width: 34px; height: 30px; min-height: 0; padding: 0; display:
     .compact-cell { gap: 6px; padding: 2px 8px 2px 6px; border: 1px solid var(--border); border-radius: 999px; min-height: 40px;
       &:empty { display: none; }
       &.on { border-color: var(--accent); }
-      &.outside { border-style: dashed; }
       input { width: 20px; height: 20px; }
       .cell-icon { display: block; width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; }
       .mark-text, .box-gap, .tip.step-head { display: none; }

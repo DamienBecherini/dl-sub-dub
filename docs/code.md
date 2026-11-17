@@ -31,7 +31,8 @@ flowchart LR
 ```
 
 A **project** gathers what the user selected: an ordered list of **items** (an address to download, or a video
-file), the steps ticked for the project, and its settings. Each item knows where it stands in each step. A single
+file), its steps (those ticked for at least one item, `rules.ticked_steps`, kept so by
+`ProjectRun.follow_ticks` after every change of the ticks), and its settings. Each item knows where it stands in each step. A single
 video sent to `POST /api/tasks` (a script) or to the command line without `--stages` is still a lone task (see
 [Tasks](#tasks-the-unit-of-work)); on the page, one video already makes a project.
 
@@ -110,7 +111,7 @@ the manager.
 | `gpu.py` | The graphics card shared by a local translation model and the dubbing: together or one at a time, and the check that measures it. |
 | `space.py`, `cleanup.py` | Free space checked before a download or an MKV; the working folder cleaned. |
 | `ytdlp.py`, `language.py` | The age of yt-dlp and its update on request; language codes. |
-| `web/dlprogress.py`, `web/playlist.py`, `web/idle.py` | The lines of yt-dlp turned into progress; a whole playlist downloaded; the stop after an hour without activity. |
+| `web/dlprogress.py`, `web/playlist.py`, `web/idle.py` | The lines of yt-dlp turned into progress; a whole playlist downloaded; the stop after an hour without activity, or once the window of the application closes (`leave`). |
 
 ## The project model
 
@@ -317,8 +318,7 @@ A video taken to the end on its own (**Continue**) skips the phases, and so does
 the buttons of its line (`run_item`: Run, Retry, Translate when its translation waits; `cancel_item`), whatever the
 state of the project. Its ▾ runs several steps of that video one after the other (`run_chain`: the first now, the
 others kept in the video, `facts["then"]`, and started by `_follow` as each step ends; one the project started
-already is waited for, an error or a cancellation ends the chain). "Run this step", from the list, runs that step alone (`ProjectRun.active`) without
-changing the steps of the project (`Project.stages`). Video by video (setting `order`, `ProjectRun.by_video`), phase 1
+already is waited for, an error or a cancellation ends the chain). "Run this step", from the list, runs that step alone (`ProjectRun.active`). Video by video (setting `order`, `ProjectRun.by_video`), phase 1
 takes the first video with a step left, in the order of the list: its dubbing as soon as it is subtitled, otherwise its
 subtitles, without a pause before the translation; the next translation takes the graphics card back (`_add_task`). Phase 1 does not end while addresses are still
 being downloaded: their videos must be transcribed too.
@@ -408,6 +408,9 @@ the stop is never taken for a whole one. The folder goes once the voice is made,
 - **Rewritten whole at each change**, through a temporary file renamed over the old one: a crash leaves the previous
   version, never half a file.
 - **Versioned** (`schema`): a file written by a newer version is refused with a clear message rather than misread.
+  Schema 2 (November 2026): the steps of a project are the ones ticked for its items. A file of schema 1, where every
+  item was ticked for every step and only `stages` said what Run ran, has its items unticked for the steps outside
+  `stages` that have not started (`Project.untick_outside`), except the ones a ticked step needs.
 - **Old batch files** (`subtitles.batch.json`) are read as projects (their videos become items whose download is
   skipped) and continued in a new project file next to them; the old file is left as it was.
 
@@ -472,7 +475,7 @@ flowchart LR
   gives the default base folder and whether a subfolder named after the project is added, `sources.default_location`;
   the page sends a choice as `location: {base, named}`, otherwise the service takes its default for the videos read).
   Until it starts, the page saves its name and folder as they change (`POST /api/projects/{id}/location`). "Run" runs
-  the steps of the project. From then on, the project
+  the steps ticked (the service says which: `rules.run.steps`). From then on, the project
   read from the service is the truth, pushed to the page as soon as it changes (Server-Sent Events,
   `GET /api/projects/{id}/events`). The stream sleeps until the project says it changed (`ProjectRun.changes`, in
   `web/runs.py`: a counter and a condition, told at each save of the project, each progress of a task or of a
@@ -491,7 +494,8 @@ flowchart LR
   after it (`web.compact_meta`). On a phone each line is a card, the states are icons with their legend under the list
   (`StateLegend`). The bubbles (`?`, states) are placed by `static/i18n.js` (`placeTip`) within the visible width of
   the window. When the service does not answer at all, `api()` says so in a sentence (stopped or restarting) instead
-  of the browser's network error.
+  of the browser's network error; a line of the list that could not be read for that reason, or because its site did
+  not answer, has Retry (`retryLine` in `select.js`).
 
   The buttons of a video in a step are those the service says (`actions`, see
   [The rules](#the-rules-what-can-be-done-now)); [`stage.js`](../subtitles/web/static/v2/stage.js) gives them their words, their icon and

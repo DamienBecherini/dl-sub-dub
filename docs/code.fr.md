@@ -32,7 +32,8 @@ flowchart LR
 ```
 
 Un **projet** réunit ce que l'utilisateur a sélectionné : une liste ordonnée d'**éléments** (une adresse à
-télécharger, ou un fichier vidéo), les étapes cochées pour le projet, et ses réglages. Chaque élément sait où il en est
+télécharger, ou un fichier vidéo), ses étapes (celles cochées pour au moins un élément, `rules.ticked_steps`, tenues
+à jour par `ProjectRun.follow_ticks` à chaque changement des cases), et ses réglages. Chaque élément sait où il en est
 à chaque étape. Une vidéo seule envoyée à `POST /api/tasks` (un script) ou à la ligne de commande sans
 `--stages` reste une tâche isolée (voir [Les tâches](#les-tâches-lunité-de-travail)) ; dans la page, une seule vidéo
 fait déjà un projet.
@@ -112,7 +113,7 @@ font que traduire une commande ou une requête HTTP en appels au gestionnaire.
 | `gpu.py` | La carte graphique partagée par un modèle de traduction local et le doublage : ensemble ou l'un après l'autre, et la vérification qui la mesure. |
 | `space.py`, `cleanup.py` | Place libre vérifiée avant un téléchargement ou un MKV ; nettoyage du dossier de travail. |
 | `ytdlp.py`, `language.py` | L'âge de yt-dlp et sa mise à jour à la demande ; les codes de langue. |
-| `web/dlprogress.py`, `web/playlist.py`, `web/idle.py` | Les lignes de yt-dlp transformées en progression ; une playlist entière téléchargée ; l'arrêt après une heure sans activité. |
+| `web/dlprogress.py`, `web/playlist.py`, `web/idle.py` | Les lignes de yt-dlp transformées en progression ; une playlist entière téléchargée ; l'arrêt après une heure sans activité, ou une fois la fenêtre de l'application fermée (`leave`). |
 
 ## Le modèle de projet
 
@@ -324,7 +325,7 @@ depuis les boutons de sa ligne (`run_item` : Lancer, Réessayer, Traduire quand 
 quel que soit l'état du projet. Son ▾ fait plusieurs étapes de cette vidéo l'une après l'autre (`run_chain` : la
 première tout de suite, les autres gardées dans la vidéo, `facts["then"]`, et lancées par `_follow` à la fin de chaque
 étape ; une étape déjà lancée par le projet est attendue, une erreur ou une annulation arrête la suite). « Lancer cette étape », depuis la liste, lance cette étape seule
-(`ProjectRun.active`) sans changer les étapes du projet (`Project.stages`). Vidéo par vidéo (réglage `order`,
+(`ProjectRun.active`). Vidéo par vidéo (réglage `order`,
 `ProjectRun.by_video`), la phase 1 prend la première vidéo qui a une étape à faire, dans l'ordre de la liste : son
 doublage dès qu'elle est sous-titrée, sinon ses sous-titres, sans pause avant la traduction ; la traduction suivante
 reprend la carte graphique (`_add_task`). La phase 1 ne se termine pas tant que des
@@ -417,7 +418,10 @@ prise pour une phrase entière. Le dossier part quand la voix est faite, ou quan
 - **Réécrit en entier à chaque changement**, par un fichier temporaire renommé par-dessus l'ancien : un plantage
   laisse la version précédente, jamais un fichier à moitié écrit.
 - **Versionné** (`schema`) : un fichier écrit par une version plus récente est refusé avec un message clair plutôt
-  que mal lu.
+  que mal lu. Schéma 2 (novembre 2026) : les étapes d'un projet sont celles cochées pour ses éléments. Un fichier du
+  schéma 1, où chaque élément était coché pour chaque étape et où seul `stages` disait ce que Lancer faisait, voit ses
+  éléments décochés pour les étapes hors de `stages` qui n'ont pas commencé (`Project.untick_outside`), sauf celles
+  dont une étape cochée a besoin.
 - **Anciens fichiers de lot** (`subtitles.batch.json`) : relus comme des projets (leurs vidéos deviennent des éléments
   dont le téléchargement est sauté) et continués dans un nouveau fichier de projet à côté ; l'ancien fichier reste tel
   quel.
@@ -483,7 +487,7 @@ flowchart LR
   (`POST /api/sources/location` donne le dossier de base par défaut et s'il s'y ajoute un sous-dossier au nom du projet,
   `sources.default_location` ; la page envoie un choix en `location: {base, named}`, sinon le service prend son défaut
   pour les vidéos lues). Tant qu'il n'a pas commencé, la page enregistre son nom et son dossier au fil des changements
-  (`POST /api/projects/{id}/location`). « Lancer » fait les étapes du projet.
+  (`POST /api/projects/{id}/location`). « Lancer » fait les étapes cochées (le service dit lesquelles : `rules.run.steps`).
   Ensuite, c'est le projet lu auprès du service qui fait foi, envoyé à la page dès qu'il change (Server-Sent Events,
   `GET /api/projects/{id}/events`). Le flux dort jusqu'à ce que le projet dise qu'il a changé (`ProjectRun.changes`,
   dans `web/runs.py` : un compteur et une condition, prévenus à chaque enregistrement du projet, à chaque avancée
@@ -503,7 +507,8 @@ flowchart LR
   vont sous le titre ou après lui (`web.compact_meta`). Sur un téléphone, chaque ligne est une carte, les états sont des
   icônes avec leur légende sous la liste (`StateLegend`). Les bulles (`?`, états) sont placées par `static/i18n.js`
   (`placeTip`) dans la largeur visible de la fenêtre. Quand le service ne répond plus du tout, `api()` le dit en une
-  phrase (arrêté ou en train de redémarrer) au lieu de l'erreur réseau du navigateur.
+  phrase (arrêté ou en train de redémarrer) au lieu de l'erreur réseau du navigateur ; une ligne de la liste qui n'a
+  pas pu être lue pour cette raison, ou parce que son site n'a pas répondu, a Réessayer (`retryLine` dans `select.js`).
 
   Les boutons d'une vidéo dans une étape sont ceux que dit le service (`actions`, voir
   [Les règles](#les-règles--ce-quon-peut-faire-maintenant)) ; [`stage.js`](../subtitles/web/static/v2/stage.js) leur donne leurs mots, leur

@@ -79,8 +79,9 @@ Ce qui est fait est relu sur le disque : une étape faite n'est pas refaite, mê
 ### Une vidéo, une étape
 
 - **La case d'une vidéo pour une étape** coche cette étape, et celles dont elle a besoin et qui ne sont pas faites (le doublage ses sous-titres, les sous-titres d'une adresse son téléchargement). Décochée, elle décoche celles qui en dépendent.
-- **Lancer** fait aussi les étapes d'avant dont des vidéos cochées ont encore besoin.
-- **Le ▾ à côté de Lancer** (**Seulement télécharger**, sous-titrer, doubler) fait cette étape seule pour les vidéos cochées, sans changer les étapes du projet.
+- **Lancer** fait toutes les étapes cochées pour au moins une vidéo, chacune pour les vidéos cochées pour elle, et les étapes d'avant dont elles ont encore besoin. Rien d'autre ne choisit les étapes : cochez la colonne du doublage (ou la case d'une vidéo) et Lancer double, une fois les sous-titres faits.
+- **Une nouvelle vidéo** est cochée pour les étapes du projet (téléchargement et sous-titres si rien n'est coché) ; un nouveau projet coche le doublage si les Réglages le disent (**Nouveaux projets**).
+- **Le ▾ à côté de Lancer** (**Seulement télécharger**, sous-titrer, doubler) fait cette étape seule pour les vidéos cochées.
 - **Le ▾ d'une ligne** liste tout ce qu'on peut faire pour cette vidéo seule :
   - les étapes restantes à la suite (Télécharger + sous-titrer + doubler, Sous-titrer + doubler, Télécharger + sous-titrer) : chacune démarre quand la précédente se termine, une erreur arrête la suite ;
   - télécharger à nouveau (avec la qualité et les pistes de son onglet Téléchargement), ajouter des pistes ;
@@ -138,6 +139,7 @@ Au-dessus de la liste :
 - Tapez ou collez des adresses et des chemins, un par ligne. Ou utilisez **Fichier…**, **Dossier…**, **Liste d'adresses…**, ou glissez des vidéos et des listes `.txt` sur la page.
 - Adresses de vidéos et de playlists, fichiers, dossiers et listes se mélangent dans un même projet.
 - Chaque ligne s'affiche tout de suite, avec son titre en moins d'une seconde pour YouTube, Dailymotion et Vimeo, puis ses détails.
+- Une ligne qui n'a pas pu être lue (service arrêté ou en train de redémarrer, site qui ne répond pas) dit pourquoi et a **Réessayer** : la ligne est relue et ses vidéos prennent sa place.
 - Une vidéo déjà dans le projet n'est pas ajoutée une seconde fois : la page dit quelle ligne la contient, y compris quand l'adresse collée est celle d'où vient un fichier du projet.
 - La première vidéo lue crée le projet : ses réglages se règlent donc aussitôt.
 
@@ -156,7 +158,6 @@ Au-dessus de la liste :
 | Groupe | Ce qu'on y règle |
 |---|---|
 | Langues, ordre du travail | Toujours visibles (voir le tableau suivant pour l'ordre). |
-| Étapes | Les étapes du projet. |
 | Doublage | Les langues doublées, un MKV avec toutes les pistes ou la voix doublée seule, le MKV à la place de la vidéo. |
 | Sous-titres | Les moteurs (ceux marqués « Par défaut » dans les Réglages, sauf si le projet ou une vidéo en choisit un autre), la langue parlée, la pause avant une traduction payante (cochée par défaut pour un traducteur payant), la relecture IA des noms, l'endroit des fichiers (à côté de la vidéo et/ou dans le dossier de sortie). |
 | Téléchargement | La qualité des vidéos du projet. |
@@ -171,7 +172,7 @@ Au-dessus de la liste :
 
 ### Lancer, suivre, arrêter
 
-- **Lancer : Téléchargement + Sous-titres + Doublage**, en bas, fait les étapes cochées pour le projet.
+- **Lancer : Téléchargement + Sous-titres + Doublage**, en bas, fait les étapes cochées dans la liste ; son nom dit lesquelles.
 - **Son ▾** fait une seule étape pour les vidéos cochées pour elle. Exemple : « Seulement doubler (1 à faire · 2 ⧗) », où le sablier compte celles qui attendent l'étape d'avant.
 - **Pause** et **Arrêter** remplacent le bouton pendant que le projet tourne. Pause : les vidéos en cours finissent, puis il attend. Arrêter : tout de suite ; ce qui est fini est gardé, et un téléchargement garde ses fichiers partiels pour reprendre où il s'est arrêté.
 - **Reprendre : …**, avec ses étapes, revient ensuite à la place. Pendant qu'un projet en pause finit ses vidéos, **Arrêter maintenant** libère tout de suite le processeur et la carte graphique.
@@ -189,7 +190,7 @@ Ce que la page montre pendant le travail :
 
 ### Où sont les réglages
 
-Dans `config.json` du dossier utilisateur : `%LOCALAPPDATA%\subtitles` sous Windows, `$XDG_CONFIG_HOME/subtitles` ou `~/.config/subtitles` ailleurs. Ce fichier recouvre les valeurs par défaut de `subtitles/config.toml`, qui ne contient que des exemples.
+Dans `config.json` du dossier utilisateur : `%LOCALAPPDATA%\subtitles` sous Windows, `$XDG_CONFIG_HOME/subtitles` ou `~/.config/subtitles` ailleurs. Ce fichier recouvre les valeurs par défaut de `subtitles/config.toml`, qui ne contient que des exemples. L'application (`python -m subtitles.app`) y range aussi ses fichiers : `window.json` (taille et place de la fenêtre), `window/` (la mémoire de sa page : thème, vue) et `app-service.log` (le journal du service qu'elle démarre).
 
 Les téléchargements (table `[youtube]`) : le dossier des vidéos téléchargées (en chemin Windows comme `D:/Vidéos` même si yt-dlp tourne dans WSL : l'outil le convertit), la qualité maximale (1080p par défaut, avec un son de 128 kb/s au plus), d'autres options de yt-dlp comme `--cookies-from-browser firefox`, et la commande yt-dlp. Aussi dans cette table : `merge_format` (`mp4`), `retries` (10, pour les erreurs 403 passagères de YouTube), `max_audio_kbps`. Votre fichier de configuration de yt-dlp reste lu (cookies, moteur JavaScript…) : ces réglages ne remplacent que son dossier de sortie et son format.
 

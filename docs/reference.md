@@ -79,8 +79,9 @@ What is done is read from the disk: a finished step is not redone, even after a 
 ### One video, one step
 
 - **The box of a video for one step** ticks that step, and the steps it needs that are not done (the dubbing its subtitles, the subtitles of an address its download). Unticked, it unticks the steps that need it.
-- **Run** also runs the steps before that ticked videos still need.
-- **The ▾ next to Run** (**Only download**, Only subtitle, Only dub) runs that step alone for the ticked videos, without changing the steps of the project.
+- **Run** runs every step ticked for at least one video, each for the videos ticked for it, and the steps before that they still need. Nothing else chooses the steps: tick the column of the dubbing (or the box of one video) and Run dubs, once the subtitles are made.
+- **A new video** is ticked for the steps of the project (download and subtitles if nothing is ticked); a new project ticks the dubbing if the Settings say so (**New projects**).
+- **The ▾ next to Run** (**Only download**, Only subtitle, Only dub) runs that step alone for the ticked videos.
 - **The ▾ of a line** lists everything that can be done for that video alone:
   - the steps left, in a row (Download + subtitle + dub, Subtitle + dub, Download + subtitle): each starts when the one before ends, an error stops the rest;
   - download again (with the quality and tracks of its Download tab), add tracks;
@@ -138,6 +139,7 @@ Above the list:
 - Type or paste addresses and paths, one per line. Or use **File…**, **Folder…**, **List of addresses…**, or drop videos and `.txt` lists on the page.
 - Addresses of videos and playlists, files, folders and lists mix in one project.
 - Each line shows at once, with its title within a second for YouTube, Dailymotion and Vimeo, then its details.
+- A line that could not be read (the service stopped or restarting, a site that does not answer) says why and has **Retry**: the line is read again and its videos take its place.
 - A video already in the project is not added a second time: the page says which line holds it, also when the address pasted is the one a file of the project comes from.
 - The first video read creates the project, so its settings can be set at once.
 
@@ -156,7 +158,6 @@ Above the list:
 | Group | What is set there |
 |---|---|
 | Languages, order of the work | Always shown (see the next table for the order). |
-| Steps | The steps of the project. |
 | Dubbing | The dubbed languages, an MKV with every track or the dubbed voice alone, the MKV in place of the video. |
 | Subtitles | The engines (those marked "Default" in the Settings, unless the project or a video chooses another), the spoken language, the pause before a paid translation (ticked by default for a paid translator), the AI review of the names, where the files go (next to the video and/or in the output folder). |
 | Download | The quality of the videos of the project. |
@@ -171,7 +172,7 @@ Above the list:
 
 ### Run, follow, stop
 
-- **Run: Download + Subtitles + Dubbing**, at the bottom, runs the steps ticked for the project.
+- **Run: Download + Subtitles + Dubbing**, at the bottom, runs the steps ticked in the list; its name says which.
 - **Its ▾** runs one step only for the videos ticked for it. Example: "Only dub (1 to do · 2 ⧗)", where the hourglass counts those waiting for the step before.
 - **Pause** and **Stop** take the place of the button while the project runs. Pause: the videos in progress finish, then it waits. Stop: at once; what is finished is kept, and a download keeps its partial files to resume where it stopped.
 - **Resume: …**, with its steps, comes back in its place afterwards. While a paused project finishes its videos, **Stop now** frees the processor and the graphics card at once.
@@ -189,7 +190,7 @@ What the page shows while at work:
 
 ### Where the settings are
 
-In `config.json` in the user folder: `%LOCALAPPDATA%\subtitles` on Windows, `$XDG_CONFIG_HOME/subtitles` or `~/.config/subtitles` elsewhere. This file overrides the defaults of `subtitles/config.toml`, which only contains examples.
+In `config.json` in the user folder: `%LOCALAPPDATA%\subtitles` on Windows, `$XDG_CONFIG_HOME/subtitles` or `~/.config/subtitles` elsewhere. This file overrides the defaults of `subtitles/config.toml`, which only contains examples. The application (`python -m subtitles.app`) keeps its things there too: `window.json` (size and place of the window), `window/` (the storage of its page: theme, view) and `app-service.log` (the log of the service it starts).
 
 The downloads (`[youtube]` table): the folder of the downloaded videos (a Windows path such as `D:/Videos` even when yt-dlp runs in WSL: the tool converts it), the maximum quality (1080p by default, with sound up to 128 kb/s), other yt-dlp options such as `--cookies-from-browser firefox`, and the yt-dlp command. Also in that table: `merge_format` (`mp4`), `retries` (10, for the passing 403 errors of YouTube), `max_audio_kbps`. Your own yt-dlp configuration file is still read (cookies, JavaScript runtime…): these settings replace only its output folder and its format.
 

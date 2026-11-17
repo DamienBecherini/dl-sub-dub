@@ -56,7 +56,7 @@ def test_without_tool_useful_message(monkeypatch):
                                                   (0, "/data/a.mp4\n/data/b.mkv\n", ["/data/a.mp4", "/data/b.mkv"]), (1, "", [])])
 def test_dialog_result(monkeypatch, code, out, expected):
     monkeypatch.setattr(desktop, "dialog_command", lambda *_: ["tool"])
-    monkeypatch.setattr(desktop.subprocess, "run", lambda *_a, **_k: type("R", (), {"returncode": code, "stdout": out})())
+    monkeypatch.setattr(desktop, "_run", lambda *_a, **_k: (code, out))
     assert desktop._unix_dialog("file", "") == expected
 
 
@@ -91,3 +91,32 @@ def test_powershell_reads_the_folder_from_its_environment():
                         "[Console]::OutputEncoding = [Text.Encoding]::UTF8; Write-Output $env:SUBTITLES_DIALOG_START"],
                        capture_output=True, text=True, encoding="utf-8", env={**os.environ, "SUBTITLES_DIALOG_START": TRAP})
     assert r.returncode == 0 and r.stdout.strip() == TRAP
+
+
+def test_one_dialog_box_at_a_time(monkeypatch):
+    """A second click (or tab) while a dialog box is open: refused at once (409), the first brought to the front; once
+    closed, a new one opens."""
+    import threading
+    from subtitles.web import desktop
+    from subtitles.web.router import RequestError
+    opened, release, fronted = threading.Event(), threading.Event(), []
+
+    def run(command, **kw):
+        opened.set()
+        release.wait(5)
+        return 0, "/videos/a.mp4\n"
+    monkeypatch.setattr(desktop, "_run", run)
+    monkeypatch.setattr(desktop, "_to_front", lambda p: fronted.append(p))
+    monkeypatch.setattr(desktop, "dialog_command", lambda kind, start: ["zenity"])
+    monkeypatch.setattr(desktop, "windows_dialog", lambda kind, start: (["powershell"], {}))
+    got = []
+    first = threading.Thread(target=lambda: got.append(desktop.dialog("file")))
+    first.start()
+    assert opened.wait(5)
+    with pytest.raises(RequestError) as e:
+        desktop.dialog("project")
+    assert e.value.code == 409 and fronted
+    release.set()
+    first.join(5)
+    assert got == [["/videos/a.mp4"]]
+    assert desktop.dialog("file") == ["/videos/a.mp4"]           # closed: the next one opens

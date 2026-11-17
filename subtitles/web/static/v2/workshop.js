@@ -9,7 +9,7 @@ import { DownloadBar, phaseText, StepLog, units } from "./dllog.js";
 import { ProjectQuality } from "./download.js";
 import { DubbingSettings, GpuSettings } from "./dubbing.js";
 import { InfoPanel } from "./info.js";
-import { Notices, OrderSwitch, StepsChoice } from "./common.js";
+import { Notices, OrderSwitch } from "./common.js";
 import { act, api, busy, duration, html, isAddress, keepInside, listOf, originOf, STAGES, T, tabKeys, Tip, update, useMenu, useStore } from "./lib.js";
 import { AddBox, LastProject, ProjectHead, VideoList } from "./select.js";
 import { actIcon, DETAILS, lackShort, lackText, LineButtons, PlayButton, playPath, roughly, roughlyLeft, workParts, workText } from "./stage.js";
@@ -116,13 +116,12 @@ function CompactCell({ p, item, step, video }) {
   const st = item.stages[step];
   const s = stepState(p, item, step);
   const name = T("v2.step." + step);
-  const inProject = p.stages.includes(step);
   const label = T("v2.work.tick_step", { state: s.tip, name: video });
   return html`
-    <span class=${`compact-cell ${inProject ? "" : "outside"} cell-${s.kind} ${item.selected && st.selected ? "on" : ""}`}>
+    <span class=${`compact-cell cell-${s.kind} ${item.selected && st.selected ? "on" : ""}`}>
       ${st.state === "done" ? html`<span class="box-gap" aria-hidden="true"></span>` : html`
       <input type="checkbox" checked=${item.selected && st.selected} disabled=${st.state === "running"}
-             aria-label=${inProject ? label : `${label} · ${T("v2.work.outside", { step: name })}`} title=${inProject ? name : T("v2.work.outside", { step: name })}
+             aria-label=${label} title=${name}
              onChange=${(e) => act(`/api/projects/${p.id}/select`, { items: { [item.id]: e.target.checked }, stage: step })} />`}
       <svg class="cell-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">${STEP_ICON[step]}</svg>
       <span class="cell-name" aria-hidden="true">${name}</span>
@@ -182,7 +181,6 @@ function StepCell({ p, item, step, video }) {
   if (!applies(item, step)) return html`<span class="step-cell na" aria-hidden="true"></span>`;
   const st = item.stages[step];
   const name = T("v2.step." + step);
-  const outside = !p.stages.includes(step);
   const running = st.state === "running";
   const now = running ? cellProgress(p, item, step) : null;
   const doing = running ? (step === "download" ? T("v2.state.running") : workText(p, item)) : "";
@@ -192,8 +190,8 @@ function StepCell({ p, item, step, video }) {
       <span class="step-cell-name">${name}</span><span class="visually-hidden">${T("v2.state.done")}</span>
     </span>`;                                          // done: nothing left to tick (Run skips it), a mark instead of a box
   return html`
-    <label class=${`step-cell ${st.selected && item.selected ? "" : "off"} ${outside ? "outside" : ""} ${now ? "measured" : ""}`}
-           title=${st.error || doing || (outside ? T("v2.work.outside", { step: name }) : name)}>
+    <label class=${`step-cell ${st.selected && item.selected ? "" : "off"} ${now ? "measured" : ""}`}
+           title=${st.error || doing || name}>
       <input type="checkbox" checked=${item.selected && st.selected} disabled=${running} aria-label=${T("v2.work.tick_step", { state: name, name: video })}
              onChange=${(e) => act(`/api/projects/${p.id}/select`, { items: { [item.id]: e.target.checked }, stage: step })} />
       <span class="step-cell-name">${name}</span>
@@ -536,9 +534,6 @@ function ProjectSettings({ s, p, hasAddresses }) {
       </div>
       ${open && html`
         <div class="ps-more">
-          <div class="settings-section"><h2>${T("v2.project.steps")}</h2>
-            <p class="help">${T("v2.work.steps_help")}</p>
-            <${StepsChoice} s=${s} hasAddresses=${hasAddresses} locked=${p.state === "running"} /></div>
           <div class="settings-section"><h2>${T("v2.step.dubbing")}</h2><${DubbingSettings} p=${p} /></div>
           <div class="settings-section"><h2>${T("v2.step.subtitles")}</h2><${SubtitleSettings} p=${p} cfg=${s.config} /></div>
           ${hasAddresses && html`<div class="settings-section"><h2>${T("v2.step.download")}</h2><${ProjectQuality} p=${p} /></div>`}

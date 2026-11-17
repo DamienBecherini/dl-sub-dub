@@ -1,34 +1,8 @@
-/* Pieces of the page: the steps ticked for the project (those "Run" runs), the order of the work, the
-   notices that wait for the user (the translation to approve, the names to check, the graphics card to free). */
-import { dubbingReady, GpuWait } from "./dubbing.js";
-import { act, api, busy, getState, html, STAGES, T, tickedStages, Tip, update } from "./lib.js";
+/* Pieces of the page: the order of the work, the notices that wait for the user (the translation to approve, the
+   names to check, the graphics card to free). */
+import { GpuWait } from "./dubbing.js";
+import { act, html, T, Tip } from "./lib.js";
 import { NamesPanel, TranslationPanel } from "./subtitles.js";
-
-/* Ticks a step for the project: kept in the page before the project exists, in the project afterwards. */
-async function toggle(step, on, hasAddresses) {
-  update((st) => ({ stages: { ...st.stages, [step]: on } }));
-  const st = getState();
-  if (st.projectId) {
-    const p = await busy("", () => api("POST", `/api/projects/${st.projectId}/stages`, { stages: tickedStages(st, hasAddresses) }));
-    if (p) update({ project: p });
-  }
-}
-
-export function StepsChoice({ s, hasAddresses, locked }) {
-  return html`
-    <div class="steps-choice" role="group" aria-label=${T("v2.steps")}>
-      ${STAGES.map((k) => {
-        const unavailable = k === "download" && !hasAddresses;
-        return html`
-          <label class=${`check step-choice ${unavailable ? "greyed" : ""}`} title=${unavailable ? T("v2.step.no_address") : ""}>
-            <input type="checkbox" checked=${s.stages[k] && !unavailable} disabled=${unavailable || locked}
-                   onChange=${(e) => toggle(k, e.target.checked, hasAddresses)} />
-            ${T("v2.step." + k)}
-          </label>`;
-      })}
-      ${s.stages.dubbing && s.config && !dubbingReady(s.config) && html`<span class="help">${T("v2.dub.not_configured_short")}</span>`}
-    </div>`;
-}
 
 /* Step by step or video by video, with what each one means. */
 export function OrderChoice({ p }) {

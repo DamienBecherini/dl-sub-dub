@@ -80,8 +80,11 @@ def test_run_one_step_without_changing_the_diagram(g, tmp_path):
 
 def test_the_ticks_of_the_diagram(g, tmp_path):
     run = project(g, tmp_path, [A])
-    assert g.projects.set_stages(run.id, [Stage.SUBTITLES, Stage.DUBBING])
-    assert run.project.stages == [Stage.SUBTITLES, Stage.DUBBING] and run.options["stop"] == "mux" and run.state == "suspended"
+    assert g.projects.set_stages(run.id, [Stage.SUBTITLES, Stage.DUBBING])     # an address: its download comes with them
+    assert run.project.stages == [Stage.DOWNLOAD, Stage.SUBTITLES, Stage.DUBBING] and run.options["stop"] == "mux" and run.state == "suspended"
+    assert all(run.project.items[0].ticked(s) for s in run.project.stages)          # the steps of the project are the ticked ones
+    g.projects.select(run.id, {run.project.items[0].id: False}, Stage.DUBBING)       # the column of the dubbing unticked
+    assert run.project.stages == [Stage.DOWNLOAD, Stage.SUBTITLES] and run.options["stop"] == "translation"
 
 
 def test_run_one_video_while_the_project_is_suspended(g, tmp_path, monkeypatch):
@@ -158,7 +161,7 @@ def test_routes_of_a_line(g, tmp_path, monkeypatch):
         assert call(f"/api/projects/{run.id}/items/{a.id}/run", {"stage": "download"})[0] == 200
         assert call(f"/api/projects/{run.id}/items/{a.id}/run", {"stage": "download"})[0] == 409
         assert call(f"/api/projects/{run.id}/items/{a.id}/cancel", {"stage": "download"})[0] == 200
-        assert call(f"/api/projects/{run.id}/stages", {"stages": ["subtitles"]})[1]["stages"] == ["subtitles"]
+        assert call(f"/api/projects/{run.id}/stages", {"stages": ["subtitles"]})[1]["stages"] == ["download", "subtitles"]   # addresses
         assert call(f"/api/projects/{run.id}/start", {"stages": ["download"], "only": True})[1]["active"] == ["download"]
         assert call(f"/api/projects/{run.id}/items/{a.id}/run", {"stage": "nothing"})[0] == 400
     finally:
@@ -203,3 +206,46 @@ def test_the_languages_are_locked_while_a_video_is_at_work(g, tmp_path):
     assert g.projects.set_project_settings(run.id, {"mkv": False})                    # not a language: still changed
     at(f, Stage.SUBTITLES, S.PAUSED)                                                 # waiting for the go-ahead of its translation
     assert g.projects.set_project_settings(run.id, {"languages": ["fr", "en", "de"]})  # taken when it is translated
+
+
+def test_run_runs_the_columns_ticked(g, tmp_path):
+    """The steps of a project are the ones ticked for its videos: the column of the dubbing ticked after the project was
+    made without it, Run dubs once the subtitles are made (17/11: Run did the subtitles and left the dubbing)."""
+    run = project(g, tmp_path, [A, B])
+    a, b = run.project.items
+    assert run.project.stages == [Stage.DOWNLOAD, Stage.SUBTITLES] and not a.ticked(Stage.DUBBING)   # not asked: not ticked
+    assert g.projects.select(run.id, {a.id: True}, Stage.DUBBING)                     # one box of the column
+    assert run.project.stages == [Stage.DOWNLOAD, Stage.SUBTITLES, Stage.DUBBING] and run.options["stop"] == "mux"
+    assert a.ticked(Stage.DUBBING) and not b.ticked(Stage.DUBBING)                     # only the one ticked
+    assert g.projects.start(run.id)                                                    # Run, as the page does
+    assert run.wants(Stage.DUBBING) and run.takes(a, Stage.DUBBING) and not run.takes(b, Stage.DUBBING)
+    assert run.project.stages == [Stage.DOWNLOAD, Stage.SUBTITLES, Stage.DUBBING]
+
+
+def test_a_project_of_the_first_version_is_read_with_its_steps(g, tmp_path):
+    """Before schema 2 every video was ticked for every step, and the steps of the project said what Run ran: read back,
+    a step outside the project is unticked where it has not started, the steps it needs stay."""
+    import json
+    run = project(g, tmp_path, [A])
+    run.save()
+    d = json.loads(run.file.read_text(encoding="utf-8"))
+    d["schema"] = 1
+    for i in d["items"]:
+        for s in i["stages"].values():
+            s["selected"] = True                                 # as version 1 wrote them
+    d["stages"] = ["subtitles"]
+    run.file.write_text(json.dumps(d), encoding="utf-8")
+    again = g.projects.load(str(run.file))
+    item = again.project.items[0]
+    assert not item.ticked(Stage.DUBBING) and item.ticked(Stage.SUBTITLES) and item.ticked(Stage.DOWNLOAD)
+    assert again.project.stages == [Stage.DOWNLOAD, Stage.SUBTITLES]
+
+
+def test_new_videos_are_ticked_for_the_steps_of_the_project(g, tmp_path):
+    run = project(g, tmp_path, [A], [Stage.DOWNLOAD, Stage.SUBTITLES, Stage.DUBBING])
+    assert g.projects.add_items(run.id, [{"source": B}]) == 1
+    assert run.project.items[1].ticked(Stage.DUBBING)
+    g.projects.select(run.id, {i.id: False for i in run.project.items}, Stage.DUBBING)
+    assert g.projects.add_items(run.id, [{"source": B + "2"}]) == 1
+    new = run.project.items[2]
+    assert not new.ticked(Stage.DUBBING) and new.ticked(Stage.SUBTITLES) and new.ticked(Stage.DOWNLOAD)
