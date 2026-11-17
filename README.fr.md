@@ -11,6 +11,7 @@
 [![Translation](https://img.shields.io/badge/translation-local%20LLM%20%7C%20Claude%20%7C%20OpenAI--compatible-D97757)](#brancher-les-moteurs)
 [![Transcription server](https://img.shields.io/badge/transcription-transcription--handy--like-BC52EE)](https://github.com/DamienBecherini/transcription-handy-like)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![CI](https://github.com/DamienBecherini/dl-sub-dub/actions/workflows/ci.yml/badge.svg)](https://github.com/DamienBecherini/dl-sub-dub/actions/workflows/ci.yml)
 
 **Français** · [English](README.md) · [Référence](docs/reference.fr.md) · [Structure du code](docs/code.fr.md) · [Sécurité](SECURITY.fr.md)
 
@@ -28,6 +29,8 @@ L'outil tourne sur votre machine, avec les moteurs que vous choisissez :
 - **Quatre façons de s'en servir** : [la page web locale](#la-page), [la ligne de commande](#la-ligne-de-commande), [un assistant IA (MCP)](#un-assistant-ia-mcp), ou [l'API](#lapi) pour vos propres scripts.
 
 ![La page : chaque vidéo avec ses cases d'étapes, son état dans chacune, ses propres réglages et son journal](docs/images/fr/workshop-dark.png)
+
+**Ce que montre ce dépôt :** un paquet Python sans aucune dépendance hors de la bibliothèque standard (`dependencies = []` dans [pyproject.toml](pyproject.toml)), qui pilote FFmpeg et yt-dlp en sous-processus. La transcription arrive avec l'horodatage de chaque mot, depuis un serveur que vous faites tourner, [transcription-handy-like](https://github.com/DamienBecherini/transcription-handy-like/blob/main/README.fr.md) ou tout serveur compatible OpenAI ; la traduction passe par une IA locale, l'API Claude, Claude Code ou toute API compatible OpenAI. 526 tests pytest, où les moteurs, yt-dlp et le doublage sont simulés et où rien ne passe par le réseau, tournent avec un lint ruff à chaque push et à chaque pull request (Python 3.11 et la dernière version stable).
 
 ## Pourquoi
 

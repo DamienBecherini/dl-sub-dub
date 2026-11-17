@@ -13,7 +13,8 @@ and resumes, and why it is built this way.**
 
 About 10,000 lines of Python in [`subtitles/`](../subtitles/), no dependency outside the standard library for the
 service itself (the Claude SDK and the dubbing environment are optional), a page of about 3,000 lines of JavaScript
-with no build step, and about 470 tests that run without a transcription server, a model or a network.
+with no build step, and about 530 tests that run without a transcription server, a model or a network, with a ruff lint, on every push
+and pull request ([`.github/workflows/ci.yml`](../.github/workflows/ci.yml)).
 
 > The flow works in four steps (Select → Download → Subtitles → Dubbing), on the page as on the command line
 > (`--stages`). The old page of batches and single videos was removed at the end of that redesign, and its

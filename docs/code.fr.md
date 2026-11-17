@@ -13,8 +13,9 @@ comment il s'arrête et reprend, et pourquoi il est construit ainsi.**
 
 Environ 10 000 lignes de Python dans [`subtitles/`](../subtitles/), aucune dépendance hors de la bibliothèque standard
 pour le service lui-même (le SDK Claude et l'environnement de doublage sont facultatifs), une page d'environ 3 000
-lignes de JavaScript sans étape de build, et environ 470 tests qui tournent sans serveur de transcription, sans modèle
-et sans réseau.
+lignes de JavaScript sans étape de build, et environ 530 tests qui tournent sans serveur de transcription, sans modèle
+et sans réseau, avec un lint ruff, à chaque push et à chaque pull request
+([`.github/workflows/ci.yml`](../.github/workflows/ci.yml)).
 
 > Le flux se fait en quatre étapes (Sélection → Téléchargement → Sous-titres → Doublage), dans la page comme en ligne
 > de commande (`--stages`). L'ancienne page des lots et des vidéos seules a été retirée à la fin de cette refonte, et son
