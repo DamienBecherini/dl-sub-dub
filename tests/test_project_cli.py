@@ -44,7 +44,7 @@ def test_a_project_like_on_the_page(setup, tmp_path):
     run = seen["run"]
     assert run.root == (tmp_path / "dl" / "My list").as_posix() and run.project.title == "My list"
     assert run.project.stages == [Stage.DOWNLOAD, Stage.SUBTITLES] and run.state == RunState.RUNNING
-    assert run.options["pause"] is False and any("nowhere" in x for x in lines)
+    assert run.options["spend_agreed"] is True and any("nowhere" in x for x in lines)
 
 
 def test_a_chosen_folder_and_files_only(setup, tmp_path, monkeypatch):

@@ -1,5 +1,56 @@
 # Changelog
 
+## 0.3.0 (2026-11-17)
+
+The AI review of whole videos, by any model of the Settings or by an assistant through the MCP server; Claude Code
+of the machine as a translator, on a Claude subscription; and a paid model that always asks first.
+
+- Full AI review of a video, optional, before the translation: besides the proper names, a model reads every
+  subtitle in order and proposes the lines to fix (a word heard wrong, a number, a sentence never said), each with its
+  reason. You accept, retouch or refuse them in the page; the accepted ones replace the words of the line before the
+  subtitles are cut and translated (`transcription.json` is never rewritten). The review of a project is now a choice:
+  none, the names, full (a project or settings with `review = true` read as "the names").
+- The model that reviews is any translator of the Settings (Claude, a local model, a model on another machine, an
+  OpenAI-compatible API), chosen for the project (`review_engine`) with a default for new projects. Without a choice: a
+  Claude translator if there is one, as before, otherwise the translator of the project (before, no Claude translator
+  meant no review).
+- Claude Code as a translator (type `claude_code`), for the review and the translation: when Claude Code is installed
+  on the machine and signed in with a Claude subscription, the Settings propose to add it. It then works without an
+  API key and without a bill (the usage counts in the limits of the subscription; the estimate is in tokens), so the
+  project does not stop for a cost. It runs bare (no tools, none of the user's hooks, instructions or MCP servers, no
+  conversation kept) and is refused when Claude Code is signed in otherwise (it would be billed). Without a choice, the
+  review prefers it to the paid Claude API. Measured 17/11/2026 on a French episode of 613 subtitles: full review by
+  Sonnet at a medium effort in 8 s, 12 lines proposed, about 14,000 tokens. API: `GET /api/claude-code`.
+- A paid model always asks first, whatever the order of the work: the project stops before a review or a translation
+  by a paid model and shows its estimated cost for each model (the review can be given to another model or dropped
+  there). Before, video by video, a video continued on its own or retried, and the review of the names, ran a paid
+  model without a question. "Do not ask me again before spending in this project", in the go-ahead panel, ends the
+  questions for one project; it is the only way: the pause setting "Never" is gone (a project or settings with
+  `pause = false` read as not set), and the box of a project now only makes a free translation wait too. The command
+  line still runs without a question (the command is the go-ahead), and a script says `spend_agreed`.
+- What the review proposes (names, lines) always waits for your decision before the translation: before, with a free
+  translator, the translation went on without waiting for the names. Video by video, the project now stops at each
+  video that waits, and the next ones wait for it.
+- The AI review is among the quick settings of a project (none, names, full; the model that reviews unfolds in place),
+  and one video can have its own (its Subtitles tab).
+- The effort of the AI review is set per Claude translator (Settings, "Effort for the AI review", medium by default;
+  `review_effort`), and the estimate follows it. Measured on a noisy French episode of 613 subtitles: Sonnet 5.5 at
+  medium proposes 9 lines (0.04 $), at high 30 (0.08 $); Opus 5.5 at high 48 (0.18 $).
+- An AI assistant can review a video itself through the MCP server: `get_subtitles` (the subtitles of a video,
+  numbered, in the spoken language or a translation with its original), `propose_corrections` (lines to fix, kept under
+  the rules of the AI review; they arrive on the page, even open, and wait for your decision there) and
+  `pending_corrections`. API: `GET /api/projects/<id>/items/<video>/subtitles`, `POST …/items/<video>/corrections`.
+- A fix accepted after the translation (or a name validated after it) is now translated too: when the Subtitles step of
+  the video runs again, only the lines whose original changed are translated again (the originals of a translation are
+  kept in `translation.<language>.source.json`). Before, the translation kept its old line.
+- What the review proposes is decided before the go-ahead: while proposals wait, their panel is shown alone ("Validate
+  and go on"), and the go-ahead for the translation comes once they are decided. Before, both panels were shown, the
+  go-ahead above, and translating first left everything unfixed. "Later" goes on without deciding (nothing is fixed, the
+  proposals stay under the go-ahead).
+- API: `GET /api/projects/<id>/review` also gives the lines to check (`corrections`), `POST …/validate` takes them
+  (`lines`), `GET …/estimate` says what the videos wait for (`waits`) and the estimate of the review (`review`), `POST
+  …/translate` takes `review`, `review_engine` and `spend_agreed`.
+
 ## 0.2.0 (2026-11-17)
 
 An application of its own, Run that does what is ticked, and the project file in a new form (schema 2): a project

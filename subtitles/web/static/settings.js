@@ -90,8 +90,13 @@ function fillSettings() {
   fillLanguages(c.target_languages || ["fr"]);
   const pr = c.projects || {};
   $(pr.order === "videos" ? "#cfg-proj-order-videos" : "#cfg-proj-order-steps").checked = true;
-  $("#cfg-proj-dubbing").checked = !!pr.dubbing; $("#cfg-proj-review").checked = !!pr.review;
-  $("#cfg-proj-pause").value = pr.pause === true ? "on" : pr.pause === false ? "off" : "";
+  $("#cfg-proj-dubbing").checked = !!pr.dubbing;
+  $("#cfg-proj-review").value = pr.review === true ? "names" : ["names", "full"].includes(pr.review) ? pr.review : "";     // true: written before the full review
+  const reviewer = $("#cfg-proj-review-engine");           // any translator that is a model; "": chosen by the service
+  reviewer.replaceChildren(new Option(T("v2.sub.review_auto_plain"), ""),
+    ...(c.translators || []).filter((m) => (m.type || "openai") !== "none").map((m) => new Option(m.name || m.id, m.id)));
+  reviewer.value = [...reviewer.options].some((o) => o.value === pr.review_engine) ? pr.review_engine : "";
+  $("#cfg-proj-pause").value = pr.pause === true ? "on" : "";      // false, of older versions ("never"): a paid model always asks now
   $("#cfg-proj-mkv").checked = pr.mkv !== false; $("#cfg-proj-replace").checked = !!pr.replace;
   $("#cfg-dest-next-to").checked = c.destination?.next_to_video ?? true;
   $("#cfg-dest-output").checked = c.destination?.output_dir ?? false;
@@ -107,6 +112,7 @@ function fillSettings() {
   const ld = $("#translator-list"); ld.innerHTML = "";
   for (const m of c.translators || []) ld.appendChild(engineRow("translator", m, m.id === c.active_translator));
   showDefault(ld);
+  offerClaudeCode();
   $("#settings-message").textContent = "";
   savedState = formState();
   for (const p of document.querySelectorAll(".cfg-page")) savedPages[p.dataset.cat] = valuesOf(p);
@@ -156,6 +162,15 @@ function showCategory(focus) {
     document.getElementById(`cat-${cat}-title`)?.focus({ preventScroll: true });
     if (phone.matches) scrollTo(0, 0);
   }
+}
+
+/* Claude Code installed on this machine and no translator that uses it yet: proposed above the list (it translates and
+   reviews on the Claude subscription of the user, without an API key). */
+let claudeCode = null;
+async function offerClaudeCode() {
+  try { claudeCode ??= await api("GET", "/api/claude-code"); } catch { claudeCode = { installed: false }; }
+  const there = [...document.querySelectorAll("#translator-list [data-field=type]")].some((f) => f.value === "claude_code");
+  $("#claude-code-offer").hidden = !claudeCode.installed || there;
 }
 
 function engineRow(kind, m, active) {
@@ -250,8 +265,9 @@ async function save() {
     c.target_languages = readLanguages();
     const pause = $("#cfg-proj-pause").value;
     c.projects = { ...(c.projects || {}), order: $("#cfg-proj-order-videos").checked ? "videos" : "steps", dubbing: $("#cfg-proj-dubbing").checked,
-                   review: $("#cfg-proj-review").checked, replace: $("#cfg-proj-replace").checked };
-    if (pause) c.projects.pause = pause === "on"; else delete c.projects.pause;                // absent: as the translator (paid: on)
+                   review: $("#cfg-proj-review").value, replace: $("#cfg-proj-replace").checked };
+    if ($("#cfg-proj-review-engine").value) c.projects.review_engine = $("#cfg-proj-review-engine").value; else delete c.projects.review_engine;
+    if (pause === "on") c.projects.pause = true; else delete c.projects.pause;                 // absent: only before a paid model
     if ($("#cfg-proj-mkv").checked) delete c.projects.mkv; else c.projects.mkv = false;      // absent: the MKV
     c.destination = { next_to_video: $("#cfg-dest-next-to").checked, output_dir: $("#cfg-dest-output").checked };
     c.dubbing = { ...(c.dubbing || {}), enabled: $("#cfg-dub-enabled").checked, wsl: $("#cfg-dub-wsl").checked,
@@ -335,6 +351,13 @@ function leave() {
   $("#btn-add-translator").addEventListener("click", () => {
     $("#translator-list").appendChild(engineRow("translator", { id: "", name: "", type: "openai", model: "", url: "", key: "" }, false));
     showDefault($("#translator-list"));
+  });
+  $("#btn-add-claude-code").addEventListener("click", () => {
+    $("#translator-list").appendChild(engineRow("translator",
+      { id: "claude-code", name: T("ui.cfg.claude_code_name"), type: "claude_code", model: "sonnet", review_effort: "medium", key: "" }, false));
+    showDefault($("#translator-list"));
+    offerClaudeCode();
+    showSummaries();
   });
   $("#form-settings").addEventListener("submit", (e) => e.preventDefault());   // Enter in a field: nothing sent
   $("#btn-save-settings").addEventListener("click", save);

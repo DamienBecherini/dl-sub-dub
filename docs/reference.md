@@ -91,9 +91,22 @@ What is done is read from the disk: a finished step is not redone, even after a 
 - While a video is being subtitled or dubbed, the languages (of the project, and its own) are locked: it keeps those it started with. They can be changed once the video has finished, or after Stop. A video waiting for the go-ahead of its translation takes the languages when it is translated.
 - Downloaded videos keep their address inside (shown as Source in Information).
 
-### AI review of the names
+### AI review (optional)
 
-The AI review (Claude) finds the proper names the transcription distorted. A name is submitted only once per project. Nothing is corrected without your validation: the accepted names go to `subtitles.glossary.json`, and `transcription.json` is never rewritten.
+Before the translation, a model can read the transcription again and propose fixes. Nothing is fixed without your decision, and `transcription.json` is never rewritten. The review is chosen per project (Subtitles settings, **AI review**), with a default for new projects in the Settings.
+
+- **The proper names.** The names the transcription distorted, with their context. A name is submitted only once per project. The accepted ones go to `subtitles.glossary.json`: they fix every video of the project and guide the translation.
+- **Full.** The names, then every subtitle of each video, read in order with its context: a word heard wrong, a number, a date, a sentence that was never said (made up during a silence, in another language). Each line to fix comes with its reason, the doubtful ones unticked; you accept, retouch or refuse. The accepted fixes are kept in the working folder of the video (`corrections.json`) and replace the words of the line before the subtitles are cut and translated. A video is reviewed once.
+- **The model that reviews** is one of the translators of the Settings: Claude, a local model, a model on another machine, any OpenAI-compatible API. Automatic: a Claude translator if there is one (the project's own; else Claude Code, on your subscription, before the paid Claude API), otherwise the translator of the project. Claude reads 800 subtitles per request (most episodes at once), another model 120. For Claude, the effort of the review is set on the translator (Settings, **Effort for the AI review**, medium by default): on a noisy dialogue a higher effort, or a stronger model, finds several times more mistakes, for a few cents more per episode (the estimate follows it). A small local model proposes less, and sometimes wrongly: its fixes are advice to check, never applied by themselves.
+- **Claude Code as the model** (translator of type `claude_code`, for the review and for the translation): when Claude Code is installed on the machine and signed in with a Claude subscription, the Settings propose to add it. It is then run once per request, without a terminal, on your subscription: no API key, nothing billed, so the project does not stop for a cost; the usage counts in the limits of your plan, and the estimate is given in tokens. It runs bare: no tools, none of your hooks, instructions, skills or MCP servers, and no conversation is kept. The service checks first that Claude Code is signed in with a subscription and removes the API keys from its environment: signed in otherwise (a Console account, a key, another provider), it would be billed, so it is refused with a message. When the limits of the plan are reached, the review or the translation stops with the message of Claude Code and resumes later where it stopped. Fields: `model` (an alias, `sonnet` or `opus`, or a full name), `effort`, `review_effort`, `program` (its path when it is not in the `PATH`). Tried on Windows with Claude Code 2.1.326 (17/11/2026: the full review of 613 subtitles in 8 s, about 14,000 tokens); not tried on Linux or macOS. Anthropic's terms for this use of a subscription apply, and they changed several times in 2026: check them (["Use the Claude Agent SDK with your Claude plan"](https://support.claude.com/en/articles/15036540-use-the-claude-agent-sdk-with-your-claude-plan)).
+- **A paid model always asks first.** Whatever the order of the work, the project stops before a review or a translation by a paid model and shows its estimated cost for each model; the review can be given to another model there, or dropped. One go-ahead covers the review and the translation of the videos that wait. **Do not ask me again before spending in this project**, in that panel, ends the questions for this project (a box of its Subtitles settings brings them back).
+- **What the review proposes always waits for your decision**, then the translation goes on. Step by step, every video is transcribed first (and reviewed, when the model is free), then the project stops once for all of them. Video by video, the project stops at each video, and the next ones wait for it.
+- **For one video** (its Subtitles tab): its own review, for instance full for a difficult episode, or none.
+- A fix accepted after the translation applies the next time the video is subtitled (run its Subtitles step again): its subtitles are cut again and the lines whose original changed are translated again, alone, the others kept (a paid translator asks first, with an estimate that counts the whole video: an upper bound). A translation made by an earlier version, without its originals kept (`translation.<language>.source.json`), stays as it is: redo it.
+- On the page, what the review proposes comes first: its panel is shown alone, and the go-ahead for the translation appears once you have validated (**Validate and go on**). **Later** shows the go-ahead at once and leaves the proposals under it: nothing is fixed without a decision.
+- **An assistant as the reviewer** (the MCP server, see the README): it reads the subtitles of a video (`get_subtitles`; `GET /api/projects/<id>/items/<video>/subtitles`, `?language=` for a translation) and proposes lines to fix (`propose_corrections`; `POST …/items/<video>/corrections` with `{corrections: [{line, corrected, reason, confidence}], by, complete}`). They are kept under the same rules as those of a model (a line of the video, really changed, not grown by its neighbours; the refused ones are said with the reason), wait for your decision on the page, and a video read whole this way is not read again by the AI review of the project. Not while the subtitles of the video are being made.
+- A review that fails (model stopped, answer that cannot be read) does not stop the video: it goes on from where it stopped the next time.
+- The estimate of a review uses constants measured on two videos (`review_*` in `[estimation]` of `subtitles/config.toml`).
 
 ### Dubbing (optional, off by default)
 
@@ -157,9 +170,9 @@ Above the list:
 
 | Group | What is set there |
 |---|---|
-| Languages, order of the work | Always shown (see the next table for the order). |
+| Languages, order of the work, AI review | Always shown (see the next table for the order, and [AI review](#ai-review-optional)). |
 | Dubbing | The dubbed languages, an MKV with every track or the dubbed voice alone, the MKV in place of the video. |
-| Subtitles | The engines (those marked "Default" in the Settings, unless the project or a video chooses another), the spoken language, the pause before a paid translation (ticked by default for a paid translator), the AI review of the names, where the files go (next to the video and/or in the output folder). |
+| Subtitles | The engines (those marked "Default" in the Settings, unless the project or a video chooses another), the spoken language, whether a free translation waits for your go-ahead too (a paid model always does), where the files go (next to the video and/or in the output folder). |
 | Download | The quality of the videos of the project. |
 | Graphics card | Translation and dubbing together or one AI at a time (see [Dubbing](#dubbing-optional-off-by-default)). |
 
@@ -168,7 +181,7 @@ Above the list:
 | Order | What it does | Why |
 |---|---|---|
 | *Step by step* (the default) | Every video goes through one step, then the next. | The cost of every translation is shown before any is paid; each AI is loaded only once. |
-| *Video by video* | Each video goes to its end, then the next. | A first video finished sooner; no pause before the translation; with one AI at a time, the graphics card is freed for each video. |
+| *Video by video* | Each video goes to its end, then the next. | A first video finished sooner; with one AI at a time, the graphics card is freed for each video. |
 
 ### Run, follow, stop
 
@@ -183,7 +196,8 @@ What the page shows while at work:
 
 - **A dubbing in several languages**: the voice under way ("Dubbing (voice 2 of 3)"), and the time left for all the voices.
 - **A download**: its parts (video, audio, finishing) and its step in plain words (reading the site, video, audio, merging, thumbnail), with the speed and the time left.
-- **A translation waiting for your go-ahead**: its estimate per translator (requests, tokens, price or duration; constants in `[estimation]` of `subtitles/config.toml`), with **Translate**.
+- **An AI review or a translation waiting for your go-ahead**: its estimate per model (price or duration; constants in `[estimation]` of `subtitles/config.toml`), with **Review, then translate** or **Translate**.
+- **What the AI review proposes**: the names and the lines to check, with **Validate**.
 - **The time left**, computed by the service. It starts from the duration of each video (or the number of lines for a translation) and the speed seen on the videos of the project. Before the first measure, it takes the speed kept from earlier sessions (`speeds.json`, next to `config.json`), otherwise the `speed` field of the transcription server. A video resumed in a few seconds is not counted.
 
 **Open** plays a video in the default player, which loads the subtitles next to it. The page follows the work as the service pushes it (Server-Sent Events).

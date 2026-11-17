@@ -82,6 +82,10 @@ Ask in one short message:
   - **The Claude API**: type `claude`, a paid key from the Anthropic Console stored as a reference (for example
     `env:ANTHROPIC_API_KEY`), and `pip install ".[claude]"`. A project stops after transcription to show the
     estimated cost before spending anything.
+  - **Claude Code, on the user's Claude subscription**: type `claude_code`, when `claude` is installed on this
+    machine and signed in with a Claude plan (`claude auth status`: `"authMethod": "claude.ai"`). No key, nothing
+    billed: the usage counts in the limits of the plan. Anthropic's terms for this use of a subscription apply, and
+    they changed in 2026: tell the user to check them. The Settings page proposes it when it is found.
   - **Another OpenAI-compatible API** (OpenAI, Mistral, Groq…): type `openai`, its base address, model, key reference.
 - **Give a recommendation for the translator from what you measured in step 1**, with the reason, then let the
   user decide with full knowledge: it is advice, never a gate. A user whose machine is below the recommendation
@@ -188,6 +192,10 @@ the right to use, and let them listen to the result.
 - Downloads (Settings): the folder of the downloaded videos, the maximum quality (1080p by default) and other yt-dlp
   options, such as `--cookies-from-browser firefox` for videos that need an account.
 - Where the settings are, and that **Settings** on the page changes them later.
+- The AI review, optional and off by default (Subtitles settings of a project; Settings, New projects, for the
+  default): a model of the settings reads the transcription again before the translation and proposes fixes (the
+  proper names, or every subtitle), which the user validates on the page. With a paid model the estimated cost is
+  shown first; a small local model finds fewer mistakes.
 - Offer, without insisting, the application: the page in a window of its own, started from a shortcut, without a
   terminal (README "The page"). If the user wants it: `pip install ".[app]"`, then
   `<install folder>/.venv/bin/python -m subtitles.app --shortcut` (add `desktop` for a desktop shortcut too).

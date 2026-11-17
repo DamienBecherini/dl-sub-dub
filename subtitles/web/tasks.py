@@ -18,7 +18,7 @@ import uuid
 from pathlib import Path
 from typing import Protocol
 
-from .. import cleanup, config, dubbing, estimation, glossary, i18n, language, local_transcription, pipeline, review, source, steps, transcription, translation
+from .. import cleanup, config, corrections, dubbing, estimation, glossary, i18n, language, local_transcription, pipeline, review, source, steps, transcription, translation
 from ..cancellation import Cancellation
 from ..states import ACTIVE_TASK_STATES, FINISHED_TASK_STATES, TaskState
 from . import timing
@@ -57,7 +57,12 @@ class Task:
         self.estimate: dict | None = None
         self.video_duration = float(options.get("video_duration") or 0)   # known in advance in a project, otherwise when the audio is extracted
         self.pass_no, self.pass_started = 1, None  # see timing.py
-        self.glossary_seen = 0.0               # state of the glossary at segmentation time
+        self.glossary_seen = (0.0, ())         # state of the glossary and of the corrections at segmentation time (see TaskQueue._seen)
+        self.waits = ""                        # paused: for what ("review": its cost, "validation": its proposals, "translation": its cost)
+        self.agreed = False                    # resumed once: the costs shown at its pause are accepted
+        self.asked_validation = False          # paused once for the proposals of the review: not asked twice
+        self.cleared = False                   # past the pauses before the translation
+        self.reviewed_now = False              # an AI review ran in this pass: its duration says nothing of the speed of the pass
         self.progress: dict | None = None      # {done, total, more, step}: lines translated or sentences dubbed so far
         self.step_started: float | None = None  # when the current step began
         self._progress_from: tuple[float, int] | None = None      # (time, done) at the first progress seen of this part
@@ -168,6 +173,7 @@ class Task:
                 "created": self.created, "started": self.started, "finished": self.finished, "error": self.error, "result": self.result,
                 "log_file": self.log_file, "estimate": self.estimate, "remaining_s": self.remaining_s(), "pass_started": self.pass_started,
                 "progress": self.progress, "log_resumed_at": self.log_resumed_at,
+                "waits": self.waits if self.state == TaskState.PAUSED else "",
                 "duration_s": None if self.state in ACTIVE_TASK_STATES else timing.log_duration(self.log),
                 "prepared": {"video": str(self.prepared.video), "language": self.prepared.code, "count": len(self.prepared.cues),
                              "source_srt": str(self.prepared.source_srt)} if self.prepared else None,
@@ -282,8 +288,9 @@ class TaskQueue:
             t.write(i18n.t("log.cancel_requested"))
         return True
 
-    def resume(self, ident: str, translator: str | None = None, languages: list[str] | None = None) -> Task | None:
-        """Second phase of a paused task, possibly with another translator or other languages."""
+    def resume(self, ident: str, translator: str | None = None, languages: list[str] | None = None, review: dict | None = None) -> Task | None:
+        """A paused task goes on, possibly with another translator or other languages; `review` {review?, review_engine?}:
+        another kind of AI review ("" for none) or another model for it. The costs shown at its pause are accepted."""
         t = self.tasks.get(ident)
         if not t or t.state != TaskState.PAUSED:
             return None
@@ -291,6 +298,8 @@ class TaskQueue:
             t.options["translator"] = translator
         if languages is not None:
             t.options["languages"] = language.normalize_codes(languages)
+        t.options.update({k: v for k, v in (review or {}).items() if k in ("review", "review_engine", "spend_agreed") and v is not None})
+        t.agreed = True
         t.state = TaskState.QUEUED
         t.log_resumed_at = len(t.log)
         t.write(i18n.t("log.resume_prefix") + " " + i18n.t("log.resumed", translator=t.options.get("translator") or i18n.t("log.active_translator"),
@@ -305,7 +314,12 @@ class TaskQueue:
         cfg = config.load()
         wanted = language.normalize_codes(languages) if languages is not None else pipeline.target_languages(self.request(t, cfg))
         remaining = pipeline.remaining_languages(t.prepared, wanted, bool(t.options.get("redo")))
-        return estimation.estimate(cfg, len(t.prepared.cues), remaining, t.prepared.code)
+        e = estimation.estimate(cfg, len(t.prepared.cues), remaining, t.prepared.code)
+        if t.state == TaskState.PAUSED:        # what it waits for, and the AI review it would run first
+            e["waits"] = t.waits
+            if t.waits == "review" and (t.estimate or {}).get("review"):
+                e["review"] = t.estimate["review"]
+        return e
 
     def current(self) -> Task | None:
         return next((t for t in list(self.tasks.values()) if t.state in ACTIVE_TASK_STATES), None)
@@ -379,12 +393,14 @@ class TaskQueue:
             r = self.request(t, cfg)
             step = lambda name: (setattr(t, "step", name), setattr(t, "step_started", time.time()), self.events.task_progressed(t))  # noqa: E731
             cancelled = t.cancellation
-            first = t.prepared is None
-            if first or glossary.fingerprint(o.get("glossary")) != t.glossary_seen:      # names validated since: segmentation to redo
-                t.glossary_seen = glossary.fingerprint(o.get("glossary"))
+            t.waits, t.reviewed_now = "", False
+            if t.prepared is None or self._seen(t) != t.glossary_seen:      # names or corrections validated since: segmentation to redo
                 t.prepared = pipeline.prepare(r, t.write, step, cancelled)
-            if first and self._pauses_after_preparation(t, r, cfg, step):
-                return
+                t.glossary_seen = self._seen(t)
+            if not t.cleared:
+                if self._pauses_after_preparation(t, r, cfg, step):
+                    return
+                t.cleared = True
             res = pipeline.translate_and_copy(r, t.prepared, t.write, step, cancelled)
             t.result = {"video": str(res.video), "srt": str(res.srt), "source_srt": str(res.source_srt), "language": res.language,
                         "count": res.cue_count, "translated": res.translated, "copies": [str(c) for c in res.copies],
@@ -433,56 +449,107 @@ class TaskQueue:
         except (config.ConfigError, OSError):
             pass
 
+    @staticmethod
+    def _seen(t: Task) -> tuple[float, tuple]:
+        """What the segmentation depends on besides the transcription: the glossary of the project and the corrections
+        of the video, as they are now."""
+        return glossary.fingerprint(t.options.get("glossary")), corrections.fingerprint(t.work)
+
+    def _pause(self, t: Task, waits: str, message: str) -> bool:
+        t.state, t.step, t.waits = TaskState.PAUSED, waits, waits
+        t.write(i18n.t("log.pause_prefix") + " " + message)
+        return True
+
     def _pauses_after_preparation(self, t: Task, r: pipeline.Request, cfg: dict, step) -> bool:
-        """After the first phase: AI review, estimate, then pause if names wait for a decision or if the translation costs."""
+        """Between the transcription and the translation, at each pass until the translation starts; three pauses at
+        most, in this order, each one only once:
+        - before an AI review that costs (a paid model): its estimate is shown. A paid model, for the review or the
+          translation, always waits for a go-ahead, whatever the order of the work, unless the user said not to be
+          asked any more (`spend_agreed`: for this project, from its go-ahead panel; a command line or a script says
+          it in what it starts). `pause` true only adds a pause before a free translation;
+        - after the review, when its proposals (names, lines) wait for a decision and the task was asked to wait for
+          them (`check_names`);
+        - before a translation that costs, unless the task was already resumed: the estimate of the translation is
+          shown at every pause, and going on accepts it."""
         o = t.options
-        pending = self._review(t, r, cfg, step)
+        asks = not o.get("spend_agreed")
         remaining = pipeline.remaining_languages(t.prepared, pipeline.target_languages(r), r.redo)
         t.estimate = estimation.estimate(cfg, len(t.prepared.cues), remaining, t.prepared.code)
-        t.write(i18n.t("log.estimate") + "\n" + estimation.text(t.estimate, cfg))
+        if not t.agreed:
+            t.write(i18n.t("log.estimate") + "\n" + estimation.text(t.estimate, cfg))
         m_trans = config.engine(cfg, "translators", "active_translator", r.translator_id)
-        if o.get("check_names") and pending:
-            t.state, t.step = TaskState.PAUSED, "review"
-            t.write(i18n.t("log.pause_prefix") + " " + i18n.t("log.paused_names", n=len(pending)))
-            return True
-        pause = o.get("pause") if o.get("pause") is not None else estimation.pause_by_default(m_trans)
-        if pause and t.estimate["languages"] and m_trans.get("type", "none") != "none":
-            t.state, t.step = TaskState.PAUSED, "translation"
-            t.write(i18n.t("log.pause_prefix") + " " + i18n.t("log.paused_translate"))
-            return True
+        mode, m_review, names, full = self._review_to_do(t, r, cfg)
+        if m_review is not None and (names or full):
+            e = estimation.review(cfg, mode, len(t.prepared.cues) if full else 0, len(names))
+            t.estimate["review"] = {**e, "engine": m_review.get("id")}
+            if not t.agreed:
+                t.write(i18n.t("log.review_estimate") + "\n" + estimation.review_text(e, m_review.get("id")))
+            # A paid model never runs without a go-ahead, even for the few names of a video.
+            if not t.agreed and asks and estimation.pause_by_default(m_review):
+                return self._pause(t, "review", i18n.t("log.paused_review", name=config.engine_name(m_review)))
+        pending_names, pending_lines = self._review(t, r, m_review, step, bool(names), full)
+        if o.get("check_names") and (pending_names or pending_lines) and not t.asked_validation:
+            t.asked_validation = True
+            return self._pause(t, "validation", i18n.t("log.paused_lines", n=pending_lines, names=len(pending_names)) if pending_lines
+                               else i18n.t("log.paused_names", n=len(pending_names)))
+        pause = (asks and estimation.pause_by_default(m_trans)) or o.get("pause") is True      # asked for a free one too
+        if pause and not t.agreed and t.estimate["languages"] and m_trans.get("type", "none") != "none":
+            return self._pause(t, "translation", i18n.t("log.paused_translate"))
         return False
 
-    def _review(self, t: Task, r: pipeline.Request, cfg: dict, step) -> list[str]:
-        """AI review if the project asks for it and it is not done yet; returns the names of this video waiting for a decision.
-        An API failure does not stop the video: only the validated names are applied, and it will be redone next time."""
+    def _review_to_do(self, t: Task, r: pipeline.Request, cfg: dict) -> tuple[str, dict | None, list[dict], bool]:
+        """What the AI review still has to do for this video: (the review asked for, the model that reviews, the names
+        never submitted, whether its subtitles are to read). Nothing outside a project, nor twice for the same video."""
+        o = t.options
+        mode = review.mode(o.get("review")) if o.get("project_file") else ""
+        if not mode:
+            return "", None, [], False
+        m = review.engine(cfg, o.get("translator") or None, o.get("review_engine") or None)
+        names_done = (t.prepared.work / review.VIDEO_FILE).is_file() and not r.redo
+        names = [] if names_done else review.to_submit(o["project_file"], [s.text for s in t.prepared.cues])
+        full = mode == "full" and not corrections.reviewed(t.prepared.work)
+        if m is None and (not names_done or full):
+            t.write(i18n.t("log.review_skipped"))
+        return mode, m, names, full
+
+    def _review(self, t: Task, r: pipeline.Request, m: dict | None, step, names_to_do: bool, full: bool) -> tuple[list[str], int]:
+        """Runs what the AI review still has to do; returns the names of this video waiting for a decision, and the
+        number of its lines corrected waiting too. A failure of the model does not stop the video: only what is
+        validated applies, and the review goes on from there next time."""
         o = t.options
         if not o.get("project_file"):
-            return []
+            return [], 0
+        texts = [s.text for s in t.prepared.cues]
+        names: list[str] = []
         file = t.prepared.work / review.VIDEO_FILE
         if file.is_file() and not r.redo:
             try:
-                return sorted(set(json.loads(file.read_text(encoding="utf-8")).get("names", [])) & review.pending_names(o["project_file"]))
+                names = sorted(set(json.loads(file.read_text(encoding="utf-8")).get("names", [])) & review.pending_names(o["project_file"]))
             except (OSError, ValueError):
                 pass
-        if not o.get("review"):
-            return []
-        m = review.engine(cfg, o.get("translator") or None)
-        if m is None:
-            t.write(i18n.t("log.review_skipped"))
-            return []
-        step("review")
-        try:
-            names = review.review(m, o["project_file"], t.prepared.work, t.prepared.video.name, [s.text for s in t.prepared.cues], t.write, lambda: t.cancel_requested)
-        except (translation.TranslationError, ValueError, KeyError) as e:
-            t.write(i18n.t("log.review_failed", error=e))
-            names = []
+        elif m is not None and review.mode(o.get("review")):
+            step("review")
+            t.reviewed_now = t.reviewed_now or names_to_do
+            try:
+                names = review.review(m, o["project_file"], t.prepared.work, t.prepared.video.name, texts, t.write, lambda: t.cancel_requested)
+            except (translation.TranslationError, ValueError, KeyError) as e:
+                t.write(i18n.t("log.review_failed", error=e))
+        if full and m is not None and not t.cancel_requested:
+            step("review")
+            t.reviewed_now = True
+            known = glossary.terms_for(glossary.load(o.get("glossary")), texts, "")
+            try:
+                corrections.review(m, t.prepared.work, t.prepared.video.name, t.prepared.cues, known, t.write, lambda: t.cancel_requested,
+                                   progress=lambda d, n: (t.translated(d, n), self.events.task_progressed(t)))
+            except (translation.TranslationError, ValueError, KeyError) as e:
+                t.write(i18n.t("log.review_failed", error=e))
         if t.cancel_requested:
             raise pipeline.Cancelled()
-        return names
+        return names, len(corrections.pending(t.prepared.work))
 
     def _end_of_pass(self, t: Task):
         """Remembers the observed speed, for the time left of the project and of the next sessions."""
-        if t.continued:                        # several steps at once: says nothing about the speed of one pass
+        if t.continued or t.reviewed_now:      # several steps at once, or an AI review: says nothing about the speed of one pass
             return
         seconds, weight = time.time() - t.pass_started, t.weight()
         if seconds < timing.MIN_DURATION_S or weight <= 0:

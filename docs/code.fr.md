@@ -67,7 +67,7 @@ flowchart TB
     source["source.py<br/><i>yt-dlp, ffmpeg</i>"]
     transcription["transcription.py"]
     segmentation["segmentation.py"]
-    review["review.py, glossary.py"]
+    review["review.py, corrections.py, glossary.py"]
     translation["translation.py"]
     dubbing["dubbing.py, muxing.py"]
   end
@@ -92,8 +92,9 @@ font que traduire une commande ou une requête HTTP en appels au gestionnaire.
 | `tracks.py` | Ce qu'un site propose pour une vidéo (résumé de `yt-dlp -J` : hauteurs, pistes audio d'origine, doublées ou doublées par IA, sous-titres), les pistes choisies pour son téléchargement, et celles ajoutées ensuite sans la retélécharger. Le code de langue d'une piste vient du site et nomme un fichier : seul un code simple est accepté (`is_language`). |
 | `transcription.py`, `local_transcription.py` | Client du serveur de transcription (mots horodatés) ; serveur local lancé à la demande. |
 | `segmentation.py`, `formats.py` | Des mots aux sous-titres lisibles ; SRT et WebVTT. |
-| `review.py`, `glossary.py` | Relecture IA des noms propres, validée par l'utilisateur, commune au projet. |
-| `translation.py`, `estimation.py` | Traduction par morceaux numérotés (modèle local, Claude, API compatible OpenAI) ; coût avant de dépenser. |
+| `review.py`, `glossary.py` | Relecture IA des noms propres, validée par l'utilisateur, commune au projet ; quelle relecture un projet demande (`review.mode`) et quel modèle relit (`review.engine` : n'importe quel traducteur). |
+| `corrections.py` | Relecture IA complète d'une vidéo : chaque sous-titre lu dans l'ordre, les lignes à corriger proposées (`review`), décidées (`decide`) et appliquées aux mots de la transcription en mémoire avant le découpage (`apply`) ; `corrections.json` dans le dossier de travail. |
+| `translation.py`, `estimation.py` | Traduction par morceaux numérotés (modèle local, API Claude, Claude Code de la machine sur l'abonnement de l'utilisateur, API compatible OpenAI) ; coût avant de dépenser. |
 | `dubbing.py`, `dubbing_worker.py`, `muxing.py` | Doublage dans un environnement Python séparé (la référence de voix d'une phrase courte complétée seulement par des répliques de la même voix, `reference_lines`, reconnue par des vecteurs de locuteur sur au moins 0,5 s de voix, `speaker_bounds`) ; MKV multipiste, la pochette jointe. La voix séparée du fond (demucs) est faite une fois par vidéo, dans `dubbing/separation`, et partagée par les langues doublées ; elle part quand toutes les voix demandées sont faites (`dubbing.clear_temporary`). Chaque phrase générée est écrite aussitôt (`dubbing/sentences-<langue>`) : un doublage arrêté les reprend (voir [Arrêter, tout de suite](#arrêter-tout-de-suite)). |
 | `project/` | Le modèle de projet et la machine à états de ses étapes, ses réglages, ses étapes, les règles de ce qu'on peut faire maintenant, son fichier, et ce que fait un choix de l'utilisateur (`choices.py` : les étapes cochées avec ce dont elles ont besoin, jusqu'où va le travail, les réglages écrits comme le travail les attend ; ni disque, ni service). |
 | `web/tasks.py` | La file : une tâche à la fois, sauf les traductions en parallèle par une API. |
@@ -106,7 +107,7 @@ font que traduire une commande ou une requête HTTP en appels au gestionnaire.
 | `web/routes/` | Les routes, un fichier par famille d'adresses : `pages.py`, `projects.py`, `videos.py` (une vidéo seule, dossiers, adresses, fichiers déposés), `system.py` (carte graphique, nettoyage, yt-dlp, boîtes de dialogue, test d'un moteur). |
 | `web/service.py`, `web/desktop.py` | Ce que les routes partagent (`manager`, le téléchargement d'une playlist, l'inventaire d'un dossier, l'état de santé) ; les boîtes de dialogue et l'ouverture d'un fichier sur la machine. |
 | `app.py`, `icons/` | L'application : la page dans une fenêtre (pywebview), le service démarré sans console et arrêté quand la fenêtre se ferme et que son travail est fini, une seule fenêtre à la fois, le raccourci (menu Démarrer de Windows, entrée de menu de Linux). |
-| `mcp_server.py` | Serveur MCP (stdio, JSON-RPC écrit à la main, bibliothèque standard) : des outils par-dessus l'API pour un assistant IA (`TOOLS`, `project_brief`). |
+| `mcp_server.py` | Serveur MCP (stdio, JSON-RPC écrit à la main, bibliothèque standard) : des outils par-dessus l'API pour un assistant IA (`TOOLS`, `project_brief`), dont sa propre relecture d'une vidéo (`get_subtitles`, `propose_corrections` : `corrections.propose`, les mêmes garde-fous que pour la réponse d'un modèle). |
 | `cancellation.py` | L'annulation : un jeton qu'on interroge (`cancelled()`, entre deux morceaux de travail) et auquel s'abonne ce qui attend un programme ou une connexion (yt-dlp, le programme de doublage, la requête de transcription), prévenu à l'instant où Arrêter est demandé. |
 | `config.py`, `i18n.py`, `states.py`, `steps.py` | Réglages en couches, messages en anglais et en français, états en `StrEnum`, étapes constatées sur le disque. |
 | `media.py`, `folder.py` | Ce que contient un fichier vidéo (ffprobe : image, pistes audio et sous-titres, l'adresse d'où il vient) et sa vignette ; les vidéos d'un dossier. |
@@ -327,7 +328,8 @@ première tout de suite, les autres gardées dans la vidéo, `facts["then"]`, et
 étape ; une étape déjà lancée par le projet est attendue, une erreur ou une annulation arrête la suite). « Lancer cette étape », depuis la liste, lance cette étape seule
 (`ProjectRun.active`). Vidéo par vidéo (réglage `order`,
 `ProjectRun.by_video`), la phase 1 prend la première vidéo qui a une étape à faire, dans l'ordre de la liste : son
-doublage dès qu'elle est sous-titrée, sinon ses sous-titres, sans pause avant la traduction ; la traduction suivante
+doublage dès qu'elle est sous-titrée, sinon ses sous-titres (une vidéo qui attend l'utilisateur retient les suivantes, `next_item` ; son accord la
+reprend aussitôt, `Orchestrator.translate`) ; la traduction suivante
 reprend la carte graphique (`_add_task`). La phase 1 ne se termine pas tant que des
 adresses sont en cours de téléchargement : leurs vidéos doivent être transcrites aussi.
 
@@ -355,9 +357,15 @@ elle raconte ce qui arrive à ses tâches par `QueueEvents` (Observer : `task_ch
 les événements aux étapes de l'élément (`Item.apply`) et réécrire le fichier de projet. Une vidéo seule (`POST /api/tasks`)
 est une tâche que personne n'écoute (`NoEvents`).
 
-Une tâche s'arrête après son premier passage (`paused`) quand une traduction payante attend l'accord de
-l'utilisateur ou que des noms attendent d'être validés ; `resume` lance son second passage, éventuellement avec un
-autre traducteur.
+Une tâche s'arrête entre la transcription et la traduction (`paused`, `Task.waits` dit pourquoi), trois fois au plus
+et chacune une seule fois (`TaskQueue._pauses_after_preparation`) : avant une relecture IA par un modèle
+payant (`review` : son estimation, `estimation.review`), quand la relecture propose des noms ou des lignes à décider
+(`validation`, pour les tâches à qui on a demandé de les attendre : `check_names`, mis pour chaque vidéo d'un
+projet), avant une traduction payante (`translation`, sauf si la tâche a déjà été reprise : l'estimation
+de la traduction s'affiche à chaque pause). `resume` lance son passage suivant, éventuellement avec un autre
+traducteur, un autre modèle de relecture, ou sans relecture. Une décision qui change les sous-titres (un nom, une
+ligne : `TaskQueue._seen`) les fait redécouper au passage suivant. Dans un projet, une vidéo de nouveau en pause après
+l'accord attend le suivant (`ProjectRun.held`), et le projet repasse en `awaiting_translation`.
 
 ### Les téléchargements
 

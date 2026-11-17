@@ -6,7 +6,7 @@ What is done is read from the disk, to survive a restart of the service: a finis
 import json
 from pathlib import Path
 
-from . import language, review
+from . import corrections, language, review
 
 ORDER = ("transcription", "review", "validation", "translation", "dubbing", "mux")
 STOPS = ("validation", "translation", "dubbing", "mux")
@@ -72,7 +72,8 @@ def dub_target(languages: list[str], spoken: str, chosen=None) -> str | None:
 
 
 def observe(work: Path, video: str | Path, languages: list[str], spoken: str, pending: set[str], dub=None) -> dict:
-    """Steps done for a video. `pending`: names still to validate in the project (see review.pending_names); `dub`: the
+    """Steps done for a video. `pending`: names still to validate in the project (see review.pending_names; the lines
+    of the full review waiting for a decision are read in its working folder, see corrections.py); `dub`: the
     dubbed languages chosen (by default the first one translated); `languages` holds them (they are translated)."""
     work, video = Path(work), Path(video)
     targets = [c for c in languages if c != spoken]
@@ -83,6 +84,10 @@ def observe(work: Path, video: str | Path, languages: list[str], spoken: str, pe
         reviewed, validated = True, not pending.intersection(names)
     except (OSError, ValueError, AttributeError):
         pass
+    lines = corrections.load(work)
+    if lines["lines"]:                             # the full review ran (or started): validated once nothing of it waits
+        waiting = any(c.get("status") == "pending" for c in lines["corrections"])
+        reviewed, validated = True, (validated or not (work / review.VIDEO_FILE).is_file()) and not waiting
     voices = dub_targets(languages, spoken, dub)
     made = muxed_languages(work)
     muxed = (mkv_path(video).is_file() or integration_mark(work).is_file()) and bool(voices) and (

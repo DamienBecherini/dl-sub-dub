@@ -100,8 +100,8 @@ def test_actions_and_errors(base, tmp_path):
     video.write_bytes(b"x")
     assert js(url + "/api/projects", "POST", {"items": [{"source": video.as_posix()}], "settings": {"nowhere": 1}})[0] == 400    # not a setting
     code, d = js(url + "/api/projects", "POST", {"items": [{"source": video.as_posix(), "language": "en"}], "stages": ["subtitles"],
-                                                 "settings": {"languages": ["de"], "pause": False}})
-    assert code == 201 and d["options"]["languages"] == ["de"] and d["options"]["pause"] is False and d["state"] == "suspended"
+                                                 "settings": {"languages": ["de"], "spend_agreed": True}})
+    assert code == 201 and d["options"]["languages"] == ["de"] and d["options"]["spend_agreed"] is True and d["state"] == "suspended"
     assert d["items"][0]["overrides"] == {"language": "en"}
     assert js(url + f"/api/projects/{d['id']}")[1]["id"] == d["id"] and d["id"] in [p["id"] for p in js(url + "/api/projects")[1]]
     assert js(url + f"/api/projects/{d['id']}/cancel", "POST", {})[1]["state"] == "cancelled"

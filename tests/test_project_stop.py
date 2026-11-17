@@ -100,6 +100,7 @@ def test_a_translation_stopped_on_request_is_cancelled_not_in_error(tmp_path, mo
     t = q.add({"source": str(tmp_path / "v.mp4")})
     from types import SimpleNamespace
     t.prepared = SimpleNamespace(video=tmp_path / "v.mp4", code="en", cues=[1], source_srt=tmp_path / "v.en.srt", work=tmp_path)
+    t.cleared = True                           # resumed after its pause: the translation starts
     monkeypatch.setattr(config, "load", lambda: {"output_dir": str(tmp_path)})
 
     def interrupted(*_a, **_k):

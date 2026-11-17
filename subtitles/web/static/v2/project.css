@@ -50,6 +50,14 @@
     .mode-switch button { white-space: nowrap; }  /* narrower (or zoomed): a label may wrap, never past the window */
   }
 }
+.ps-review { max-width: 340px;
+  .review-by { margin: 0; line-height: 1.45; }
+  .paid { color: var(--text); font-weight: 600; }
+  .review-model { display: grid; gap: 4px; font-size: 13px; color: var(--muted);
+    > span { display: inline-flex; align-items: center; gap: 4px; }
+  }
+  select { max-width: 100%; }
+}
 .ps-field { display: grid; gap: 6px; min-width: 0; max-width: 100%;
   .field-label { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: var(--muted); }
 }

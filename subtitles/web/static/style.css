@@ -90,6 +90,13 @@ button.icon svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-line
 .scroll-zone:has(> .log) .scroll-arrow { left: auto; right: 16px; transform: none; }   /* log: in the corner, so as not to hide the text */
 .tree, .log { scrollbar-width: thin; scrollbar-color: var(--accent) transparent; }
 .banner { padding: 10px 14px; border: 1px solid var(--attention); border-radius: 10px; background: var(--card); }
+/* Something found on the machine and proposed (Settings: Claude Code): framed in the accent colour, its action as the main button. */
+.offer { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; margin: 12px 0 16px; padding: 12px 16px;
+  border: 1px solid var(--accent); border-left-width: 5px; border-radius: 10px;
+  background: var(--drop); background: color-mix(in srgb, var(--accent) 12%, var(--card)); }
+.offer-text { flex: 1 1 300px; font-size: 14px; line-height: 1.45; }
+.offer-text strong { display: block; margin-bottom: 2px; font-size: 15px; color: var(--accent); }
+.offer button { flex: none; }
 .header-link { font-size: 14px; color: var(--accent); text-decoration: none; padding: 8px 10px; border-radius: 8px; }
 .header-link:hover { text-decoration: underline; }
 .header-link[aria-disabled="true"] { color: var(--muted); opacity: .5; pointer-events: none; cursor: default; }

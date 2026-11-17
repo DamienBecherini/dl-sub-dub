@@ -88,7 +88,9 @@ def estimate_project(req, id):
 
 @route("GET", "/api/projects/{id}/review")
 def review_project(req, id):
-    """?path=: names to check."""
+    """?path=: what the AI review proposes and waits a decision for: the names of the project (`proposals`) and,
+    video by video, the lines of the full review (`corrections`: [{item, title, corrections: [{id, line, start,
+    original, corrected, reason, confidence}]}])."""
     r = service.manager.projects.proposals(id, req.arg("path"))
     if r is None:
         raise RequestError(404, i18n.t("err.project_unknown"))
@@ -97,8 +99,10 @@ def review_project(req, id):
 
 @route("POST", "/api/projects/{id}/validate")
 def validate_project(req, id):
-    """{decisions: [{transcribed, spelling, french, accept}]}"""
-    r = service.manager.projects.validate_names(id, req.json().get("decisions") or [])
+    """{decisions?: [{transcribed, spelling, french, accept}], lines?: [{item, id, accept, corrected?}]}: the names,
+    and the lines of the full review (`corrected`: the text retouched)."""
+    d = req.json()
+    r = service.manager.projects.validate_names(id, d.get("decisions") or [], d.get("lines") or [])
     if r is None:
         raise RequestError(404, i18n.t("err.project_unknown"))
     return 200, {**r, "project": service.manager.projects.get(id).summary()}
@@ -111,15 +115,20 @@ def suspend_or_cancel_project(req, id, action):
 
 @route("POST", "/api/projects/{id}/translate")
 def translate_project(req, id):
-    """{translator?, languages?, stop?}"""
+    """{translator?, languages?, stop?, review?, review_engine?, spend_agreed?}: the go-ahead for the videos that wait (the AI review
+    that waited for its cost, then the translation); `review` ("", "names", "full") and `review_engine` (id of a
+    translator, "" for the default one) change the review of the project first; `spend_agreed` true: no more asking before a paid model in this project."""
     d = req.json()
     _check_stop(d.get("stop"))
-    return _project_after(id, service.manager.projects.translate(id, d.get("translator"), d.get("languages"), d.get("stop")), "translate")
+    done = service.manager.projects.translate(id, d.get("translator"), d.get("languages"), d.get("stop"),
+                                              {"review": d.get("review"), "review_engine": d.get("review_engine"),
+                                               "spend_agreed": d.get("spend_agreed")})
+    return _project_after(id, done, "translate")
 
 
 @route("POST", "/api/projects/{id}/resume")
 def resume_project(req, id):
-    """{translator?, transcription?, languages?, pause?, stop?}"""
+    """{translator?, transcription?, languages?, pause?, spend_agreed?, stop?}"""
     return _project_after(id, service.manager.projects.resume(id, req.json()), "resume")
 
 
@@ -342,6 +351,46 @@ def set_item_origin(req, id, item):
     read again) → the project; 409 for an address of the list, or anything but an http(s) address."""
     _project(id)
     return _project_after(id, service.manager.projects.fetching.set_origin(id, item, str(req.json().get("address") or "")), "origin")
+
+
+@route("GET", "/api/projects/{id}/items/{item}/subtitles")
+def item_subtitles(req, id, item):
+    """?language=: the subtitles of a video as they are now, numbered ({item, title, spoken_language, language, count,
+    waiting, lines: [{line, start, end, text, translation?}]}; with another language than the spoken one, its
+    translation line by line, `stale`: the lines whose original changed since). 409: not transcribed yet, or no
+    translation of these subtitles in that language."""
+    _project(id)
+    wanted = (req.arg("language") or "").strip().lower()
+    r = service.manager.projects.subtitles_of(id, item, wanted)
+    if r is None:
+        raise not_found()
+    if not r["transcribed"]:
+        raise RequestError(409, i18n.t("err.not_transcribed"))
+    if r.get("translated") is False:
+        raise RequestError(409, i18n.t("err.no_translation_kept", lang=wanted))
+    return 200, r
+
+
+@route("POST", "/api/projects/{id}/items/{item}/corrections")
+def propose_item_corrections(req, id, item):
+    """{corrections: [{line, corrected, reason, confidence?}], by?, complete?}: lines to fix proposed from outside (an
+    assistant that read the subtitles), numbered as GET …/subtitles numbers them; they wait for a decision in the page
+    like those of the AI review. `complete` (true by default): the whole video was read, the AI review of the project
+    will not read it again. → {proposed, refused: [{line, why}], waiting, state}; 409: not transcribed yet, or its
+    subtitles are being made."""
+    _project(id)
+    d = req.json()
+    found = d.get("corrections")
+    if not isinstance(found, list):
+        raise RequestError(400, i18n.t("err.corrections_expected"))
+    r = service.manager.projects.propose_corrections(id, item, found, str(d.get("by") or "")[:80], d.get("complete") is not False)
+    if r is None:
+        raise not_found()
+    if not r["transcribed"]:
+        raise RequestError(409, i18n.t("err.not_transcribed"))
+    if r["busy"]:
+        raise RequestError(409, i18n.t("err.subtitles_running"))
+    return 200, {k: r[k] for k in ("proposed", "refused", "waiting", "state")}
 
 
 @route("POST", "/api/projects/{id}/items/{item}/{action:run|cancel}")

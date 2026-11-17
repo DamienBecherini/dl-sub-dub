@@ -16,7 +16,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import cleanup, config, dubbing, formats, glossary, i18n, language, local_transcription, muxing, segmentation, source, steps, transcription, translation
+from . import cleanup, config, corrections, dubbing, formats, glossary, i18n, language, local_transcription, muxing, segmentation, source, steps, transcription, translation
 from .segmentation import Cue, Settings
 
 STEPS = ["source", "transcription", "segmentation", "review", "translation", "files", "dubbing", "mux"]
@@ -120,18 +120,64 @@ def translation_file(work: Path, target: str) -> Path:
     return work / f"translation.{target}.json"
 
 
-def remaining_languages(p: Prepared, languages: list[str], redo: bool = False) -> list[str]:
-    """Languages really to translate: neither the spoken language, nor those whose translation of this segmentation is kept."""
-    def done(target: str) -> bool:
+def translation_source_file(work: Path, target: str) -> Path:
+    """The subtitles a translation was made from, line by line: a line whose original changed since (a fix of the AI
+    review or a name validated after the translation) is translated again, alone."""
+    return work / f"translation.{target}.source.json"
+
+
+def translation_of(work: Path, target: str, texts: list[str]) -> tuple[list[str] | None, list[int]]:
+    """The translation kept of these subtitles into `target`, and the indexes of its lines to translate again (their
+    original changed since; known when the originals were kept with it). (None, []) without a translation of this
+    segmentation."""
+    def read(f: Path):
         try:
-            return len(json.loads(translation_file(p.work, target).read_text(encoding="utf-8"))) == len(p.cues)
-        except (OSError, ValueError, TypeError):
-            return False
+            d = json.loads(f.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+        return d if isinstance(d, list) and len(d) == len(texts) else None
+    translated = read(translation_file(work, target))
+    if translated is None:
+        return None, []
+    made_from = read(translation_source_file(work, target))
+    return translated, ([i for i, (a, b) in enumerate(zip(made_from, texts)) if a != b] if made_from is not None else [])
+
+
+def remaining_languages(p: Prepared, languages: list[str], redo: bool = False) -> list[str]:
+    """Languages really to translate: neither the spoken language, nor those whose translation of these subtitles is
+    kept (same segmentation, no line whose original changed since)."""
+    texts = [getattr(s, "text", "") for s in p.cues]
+
+    def done(target: str) -> bool:
+        translated, changed = translation_of(p.work, target, texts)
+        return translated is not None and not changed
     return [c for c in languages if c != p.code and (redo or not done(c))]
 
 
 def work_dir(output_dir: str | Path, video: str | Path) -> Path:
     return Path(output_dir) / ".work" / source.slug(Path(video).stem)
+
+
+def cut(words: list[dict], work: Path, glossary_file, settings: Settings, log=lambda _m: None) -> list:
+    """The subtitles of a transcription, in its language: its words, fixed by the lines of the full AI review that were
+    accepted and by the names of the glossary, then cut."""
+    words, corrected = corrections.apply(words, corrections.accepted(work))
+    if corrected:
+        log(i18n.t("log.corrections_applied", n=corrected))
+    words, fixes = glossary.fix_words(words, glossary.load(glossary_file))
+    if fixes:
+        log(i18n.t("log.glossary_fixed", n=fixes))
+    return segmentation.build(segmentation.from_json(words), settings)
+
+
+def kept_cues(cfg: dict, work: str | Path, glossary_file=None) -> list | None:
+    """The subtitles in the original language of a video already transcribed, as the Subtitles step cuts them now;
+    None without a transcription."""
+    try:
+        words = json.loads((Path(work) / "transcription.json").read_text(encoding="utf-8"))["words"]
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    return cut(words, Path(work), glossary_file, Settings(**cfg.get("subtitles", {}))) if words else None
 
 
 def transcription_kept(output_dir: str | Path, video: str | Path) -> bool:
@@ -216,6 +262,7 @@ def prepare(r: Request, log=print, step=lambda name: None, cancelled=lambda: Fal
         except transcription.TranscriptionCancelled:
             raise Cancelled() from None            # the server was told by the closed connection
         tr_file.write_text(json.dumps(tr, ensure_ascii=False, indent=1), encoding="utf-8")
+        corrections.forget(work)               # they were those of the transcription before
         log(i18n.t("log.transcribed", s=round(time.perf_counter() - t), words=len(tr["words"]), segments=len(tr["segments"])))
     if not tr["words"]:
         raise transcription.TranscriptionError(i18n.t("err.no_speech"))
@@ -224,10 +271,7 @@ def prepare(r: Request, log=print, step=lambda name: None, cancelled=lambda: Fal
     # 3. Segmentation in the original language
     step("segmentation")
     code = wanted_language or tr.get("language") or language.detect(tr.get("text", "")) or _asked_language(work) or "xx"
-    words, fixes = glossary.fix_words(tr["words"], glossary.load(r.glossary))
-    if fixes:
-        log(i18n.t("log.glossary_fixed", n=fixes))
-    cues = segmentation.build(segmentation.from_json(words), settings)
+    cues = cut(tr["words"], work, r.glossary, settings, log)      # with the lines fixed by the full review, and the glossary
     source_srt = work / f"{base}.{code}.srt"
     source_srt.write_text(formats.srt(cues, settings), encoding="utf-8")
     log(i18n.t("log.source_subtitles", code=code, lang=i18n.language_name(code), n=len(cues), file=source_srt.name))
@@ -304,14 +348,25 @@ def translate_and_copy(r: Request, p: Prepared, log=print, step=lambda name: Non
                 files = [OutputFile(p.code, p.source_srt, len(p.cues), False)]
             for k, target in enumerate(targets):
                 trans_file = translation_file(p.work, target)
-                translated = None
+                translated, changed = None, []
                 if trans_file.exists() and not r.redo:
-                    translated = json.loads(trans_file.read_text(encoding="utf-8"))
-                    if len(translated) != len(texts):
-                        translated = None
+                    translated, changed = translation_of(p.work, target, texts)
+                    if translated is None:
                         log(i18n.t("log.translation_other_split", lang=target))
-                    else:
+                    elif not changed:
                         log(i18n.t("log.translation_already", lang=target))
+                chunk_size = int(cfg.get("translation", {}).get("chunk_size", 25))
+                if translated is not None and changed:        # only the lines whose original changed since (a fix accepted later)
+                    if translator is None:
+                        translator = translation.create(m_trans, log)
+                    log(i18n.t("log.translating_changed", n=len(changed), lang=target, translator=config.engine_name(m_trans)))
+                    again = [texts[i] for i in changed]
+                    new = translation.translate_texts(translator, again, chunk_size, log, cancelled=cancelled, target=target,
+                                                      terms=glossary.terms_for(glossary.load(r.glossary), again, target))
+                    for i, text in zip(changed, new):
+                        translated[i] = text
+                    trans_file.write_text(json.dumps(translated, ensure_ascii=False, indent=1), encoding="utf-8")
+                    translation_source_file(p.work, target).write_text(json.dumps(texts, ensure_ascii=False, indent=1), encoding="utf-8")
                 if translated is None:
                     if translator is None:
                         translator = translation.create(m_trans, log)
@@ -320,11 +375,12 @@ def translate_and_copy(r: Request, p: Prepared, log=print, step=lambda name: Non
                     terms = glossary.terms_for(glossary.load(r.glossary), texts, target)
                     if terms:
                         log(i18n.t("log.glossary_terms", n=len(terms)))
-                    translated = translation.translate_texts(translator, texts, int(cfg.get("translation", {}).get("chunk_size", 25)),
+                    translated = translation.translate_texts(translator, texts, chunk_size,
                                                              log, cancelled=cancelled, target=target, terms=terms,
                                                              progress=(lambda d, n, more=len(targets) - k - 1: r.on_progress(d, n, more))   # noqa: B008 (counted now, on purpose)
                                                              if r.on_progress else None)
                     trans_file.write_text(json.dumps(translated, ensure_ascii=False, indent=1), encoding="utf-8")
+                    translation_source_file(p.work, target).write_text(json.dumps(texts, ensure_ascii=False, indent=1), encoding="utf-8")
                     log(i18n.t("log.translated", s=round(time.perf_counter() - t)))
                 final = segmentation.split_too_long([Cue(s.start, s.end, t) for s, t in zip(p.cues, translated)], settings)
                 final = segmentation.adjust_durations(final, settings)

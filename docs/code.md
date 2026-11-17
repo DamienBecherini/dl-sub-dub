@@ -65,7 +65,7 @@ flowchart TB
     source["source.py<br/><i>yt-dlp, ffmpeg</i>"]
     transcription["transcription.py"]
     segmentation["segmentation.py"]
-    review["review.py, glossary.py"]
+    review["review.py, corrections.py, glossary.py"]
     translation["translation.py"]
     dubbing["dubbing.py, muxing.py"]
   end
@@ -90,8 +90,9 @@ the manager.
 | `tracks.py` | What a site offers for a video (summary of `yt-dlp -J`: heights, audio tracks original, dubbed or dubbed by AI, subtitles), the tracks chosen for its download, and those added afterwards without downloading it again. The language code of a track comes from the site and names a file: only a plain code is accepted (`is_language`). |
 | `transcription.py`, `local_transcription.py` | Client of the transcription server (words with timestamps); a local server started on demand. |
 | `segmentation.py`, `formats.py` | Words → readable subtitles; SRT and WebVTT. |
-| `review.py`, `glossary.py` | AI review of proper names, validated by the user, shared by the project. |
-| `translation.py`, `estimation.py` | Translation in numbered chunks (local model, Claude, OpenAI-compatible); cost before spending. |
+| `review.py`, `glossary.py` | AI review of proper names, validated by the user, shared by the project; which review a project asks for (`review.mode`) and which model reviews (`review.engine`: any translator). |
+| `corrections.py` | Full AI review of a video: every subtitle read in order, the lines to fix proposed (`review`), decided (`decide`) and applied to the words of the transcription in memory before the segmentation (`apply`); `corrections.json` in the working folder. |
+| `translation.py`, `estimation.py` | Translation in numbered chunks (local model, Claude API, Claude Code of the machine on the user's subscription, OpenAI-compatible), and a JSON answer of a given shape from any of them (`complete(schema=…)`, `parse_json`); cost of a translation and of an AI review before spending. |
 | `dubbing.py`, `dubbing_worker.py`, `muxing.py` | Dubbing in a separate Python environment (a short sentence's voice reference completed only with lines of the same voice, `reference_lines`, recognized from speaker vectors of at least 0.5 s of voice, `speaker_bounds`); multi-track MKV, the cover attached. The voice separated from the background (demucs) is made once per video, in `dubbing/separation`, and shared by the dubbed languages; it goes once every voice asked is made (`dubbing.clear_temporary`). Each sentence is written as soon as it is made (`dubbing/sentences-<language>`): a stopped dubbing takes them again (see [Stopping, at once](#stopping-at-once)). |
 | `project/` | The project model and the state machine of its steps, its settings, its steps, the rules of what can be done now, its file, and what a choice of the user does (`choices.py`: steps ticked with what they need, how far the work goes, settings written as the work expects them; no disk, no service). |
 | `web/tasks.py` | The queue: one task at a time, except parallel translations through an API. |
@@ -104,7 +105,7 @@ the manager.
 | `web/routes/` | The routes, one file per family of addresses: `pages.py`, `projects.py`, `videos.py` (a lone video, folders, addresses, files dropped), `system.py` (graphics card, cleaning, yt-dlp, dialog boxes, test of an engine). |
 | `web/service.py`, `web/desktop.py` | What the routes share (`manager`, the playlist download, the folder inventory, health); the dialog boxes and the opening of a file on the machine. |
 | `app.py`, `icons/` | The application: the page in a window (pywebview), the service started without a console and stopped when the window closes and its work is done, one window at a time, the shortcut (Windows Start menu, Linux menu entry). |
-| `mcp_server.py` | MCP server (stdio, JSON-RPC by hand, standard library): tools over the API for an AI assistant (`TOOLS`, `project_brief`). |
+| `mcp_server.py` | MCP server (stdio, JSON-RPC by hand, standard library): tools over the API for an AI assistant (`TOOLS`, `project_brief`), among them its own review of a video (`get_subtitles`, `propose_corrections`: `corrections.propose`, the same guards as a model's answer). |
 | `cancellation.py` | The cancellation: a token that is asked (`cancelled()`, between two pieces of work) and that what waits for a program or a connection listens to (yt-dlp, the dubbing program, the transcription request), told the moment Stop is asked. |
 | `config.py`, `i18n.py`, `states.py`, `steps.py` | Settings in layers, messages in English and French, states as `StrEnum`, steps found done on the disk. |
 | `media.py`, `folder.py` | What a video file holds (ffprobe: picture, audio and subtitle tracks, the address it came from) and its thumbnail; the videos of a folder. |
@@ -320,7 +321,8 @@ state of the project. Its ▾ runs several steps of that video one after the oth
 others kept in the video, `facts["then"]`, and started by `_follow` as each step ends; one the project started
 already is waited for, an error or a cancellation ends the chain). "Run this step", from the list, runs that step alone (`ProjectRun.active`). Video by video (setting `order`, `ProjectRun.by_video`), phase 1
 takes the first video with a step left, in the order of the list: its dubbing as soon as it is subtitled, otherwise its
-subtitles, without a pause before the translation; the next translation takes the graphics card back (`_add_task`). Phase 1 does not end while addresses are still
+subtitles (a video that waits for the user holds the next ones, `next_item`; its go-ahead resumes it at once,
+`Orchestrator.translate`); the next translation takes the graphics card back (`_add_task`). Phase 1 does not end while addresses are still
 being downloaded: their videos must be transcribed too.
 
 **How many at once.** Each kind of work has its own limit, set by what it occupies:
@@ -346,8 +348,15 @@ nothing named nor checked. The queue knows nothing of projects: it tells what ha
 moves forward), which the orchestrator implements to report the events to the steps of the item (`Item.apply`) and
 rewrite the project file. A lone video (`POST /api/tasks`) is a task with nobody listening (`NoEvents`).
 
-A task stops after its first pass (`paused`) when a paid translation needs the user's go-ahead or names wait for
-validation; `resume` starts its second pass, possibly with another translator.
+A task stops between the transcription and the translation (`paused`, `Task.waits` says for what), three times at
+most and each only once (`TaskQueue._pauses_after_preparation`): before an AI review by a paid model (`review`:
+its estimate, `estimation.review`), when the review proposes names or lines to decide (`validation`, for the tasks
+asked to wait for them: `check_names`, set for every video of a project), before a paid translation
+(`translation`, unless the task was already resumed: the estimate of the translation is shown at every pause).
+`resume` starts its next pass, possibly with another translator, another model for the review, or none. A decision
+that changes the subtitles (a name, a line: `TaskQueue._seen`) makes the next pass cut them again. In a project, a
+video paused again after the go-ahead waits for the next one (`ProjectRun.held`), and the project goes back to
+`awaiting_translation`.
 
 ### Downloads
 
@@ -513,8 +522,9 @@ flowchart LR
       its tracks are added the same way.
   - **Subtitles** ([`subtitles.js`](../subtitles/web/static/v2/subtitles.js)): the spoken language and the languages of the video. The
     settings of the step hold those of the project as they will apply (`ProjectRun.subtitle_settings`: the engines
-    chosen or the default ones, the pause before the translation chosen or the translator's default), the translation
-    waiting for the go-ahead with its estimate, and the names to check.
+    chosen or the default ones, the pause before the translation chosen or the translator's default), the AI review and
+    the translation waiting for the go-ahead with their estimates (`TranslationPanel`, `GET …/estimate`: `waits`,
+    `review`), and what the review proposes to check, names and lines (`NamesPanel`, `GET …/review`, `POST …/validate`).
   - **Dubbing** ([`dubbing.js`](../subtitles/web/static/v2/dubbing.js)): the engine of the settings, or what is missing to use it, and the
     choices of the project or of one video (`ProjectRun.dubbing_settings` gives them as they will apply):
     - the dubbed languages (`dub_language`, a list; by default every language of the subtitles but the spoken one,

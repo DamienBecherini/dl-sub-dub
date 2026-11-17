@@ -1,6 +1,7 @@
-/* Pieces of the page: the order of the work, the notices that wait for the user (the translation to approve, the
-   names to check, the graphics card to free). */
+/* Pieces of the page: the order of the work, the notices that wait for the user (the AI review and the
+   translation to approve, what the review proposes to check, the graphics card to free). */
 import { GpuWait } from "./dubbing.js";
+import { useEffect, useState } from "/static/vendor/preact-htm.js";
 import { act, html, T, Tip } from "./lib.js";
 import { NamesPanel, TranslationPanel } from "./subtitles.js";
 
@@ -33,12 +34,21 @@ export function OrderSwitch({ p, disabled = false }) {
     </span>`;
 }
 
-/* What waits for the user, above the videos. */
+/* What waits for the user, above the videos. What the AI review proposes is decided first: while proposals wait, they
+   are shown alone, and the go-ahead (a translation, a paid review) comes once they are decided: what is accepted applies
+   before translating. "Later" shows the go-ahead at once, the proposals under it (nothing is fixed without a decision). */
 export function Notices({ p }) {
+  const [toDecide, setToDecide] = useState(null);         // proposals shown by the panel; null: not known yet
+  const [later, setLater] = useState(false);
+  const goAhead = p?.state === "awaiting_translation";
+  useEffect(() => { setLater(false); }, [p?.id, goAhead]);
   if (!p) return null;
+  const first = goAhead && !later;                        // the proposals come before the go-ahead
+  const names = html`<${NamesPanel} p=${p} onCount=${setToDecide} onLater=${first ? () => setLater(true) : null} />`;
   return html`
     <${GpuWait} p=${p} />
-    ${p.state === "awaiting_translation" && html`<${TranslationPanel} p=${p} />`}
-    ${p.subtitles.review && html`<${NamesPanel} p=${p} />`}
+    ${first && names}
+    ${goAhead && (later || toDecide === 0) && html`<${TranslationPanel} p=${p} undecided=${later && toDecide > 0} />`}
+    ${!first && names}
     ${p.blocked?.length > 0 && html`<p class="attention">${T("v2.project.blocked", { n: p.blocked.length })}</p>`}`;
 }

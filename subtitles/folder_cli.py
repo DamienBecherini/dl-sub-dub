@@ -40,7 +40,7 @@ def run(path: str, cfg: dict, log, *, transcription: str | None = None, translat
     file = None if new and p.is_dir() else find_project_file(p, cfg, output_dir)
     if file:
         run_ = g.projects.load(str(file))
-        changes = {"translator": translator, "transcription": transcription, "pause": False, "stop": stop}
+        changes = {"translator": translator, "transcription": transcription, "spend_agreed": True, "stop": stop}
         if languages is not None:
             changes["languages"] = languages
         g.projects.resume(run_.id, changes)
@@ -52,7 +52,7 @@ def run(path: str, cfg: dict, log, *, transcription: str | None = None, translat
         videos = folder.scan(p, recursive)
         if not videos:
             raise source.SourceError(i18n.t("err.no_videos_in", path=p))
-        options = {"transcription": transcription or "", "translator": translator or "", "pause": False, "redo": redo}
+        options = {"transcription": transcription or "", "translator": translator or "", "spend_agreed": True, "redo": redo}      # the command is the go-ahead
         if languages is not None:
             options["languages"] = language.normalize_codes(languages)
         if output_dir:

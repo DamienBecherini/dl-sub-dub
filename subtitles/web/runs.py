@@ -15,7 +15,7 @@ from collections import ChainMap
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .. import config, dubbing, estimation, gpu, i18n, steps
+from .. import config, dubbing, estimation, gpu, i18n, review, steps
 from ..project import Event, Item, Project, Stage, StageState, rules, settings, stages, store
 from ..states import RunState, VideoState
 from ..project.choices import stop_for
@@ -76,6 +76,8 @@ class ProjectRun:
         self.concurrency = 1                   # videos processed at once (several: translation by a remote API)
         self.active: list[Stage] | None = None # steps run now ("Run this step"); None: those ticked on the diagram
         self.card = CardShare()
+        self.review_stamp = 0                  # raised when proposals come from outside (an assistant): the page reads them again
+        self.held: set[str] = set()            # videos paused again after a go-ahead (the proposals of their AI review): they wait for the next one
         self.changes = Changes()               # told at each save, each progress of a task or of a download
         self.lock = threading.RLock()          # the parallel tasks and the downloads update the project and its file
 
@@ -104,8 +106,8 @@ class ProjectRun:
         return self.project.selected()
 
     def subtitle_settings(self, cfg: dict | None = None) -> dict:
-        """The settings of the Subtitles step as they will apply: the engines chosen, otherwise the active ones; the
-        pause before the translation, otherwise the translator's default (on for a paid one)."""
+        """The settings of the Subtitles step as they will apply: the engines chosen, otherwise the active ones; whether a
+        free translation waits too (`pause`; a paid model always does, unless `spend_agreed`)."""
         cfg = cfg if cfg is not None else config.load()
         s = self.settings(None, cfg)
         try:
@@ -113,11 +115,14 @@ class ProjectRun:
         except config.ConfigError:
             translator = {}
         transcription = s["transcription"] or cfg.get("active_transcription") or ""
+        reviewer = review.engine(cfg, s["translator"] or None, s["review_engine"] or None)
         return {"transcription": transcription, "translator": translator.get("id") or s["translator"] or "",
                 "translator_paid": bool(translator) and estimation.pause_by_default(translator),
                 "languages": list(s["languages"] or []), "language": s["language"] or "",
-                "pause": bool(s["pause"]) if s["pause"] is not None else bool(translator) and estimation.pause_by_default(translator),
-                "pause_chosen": s["pause"] is not None, "review": bool(s["review"]), "destination": dict(s["destination"])}
+                "pause": s["pause"] is True, "review": review.mode(s["review"]), "review_engine": s["review_engine"] or "",
+                "reviewer": (reviewer or {}).get("id") or "", "reviewer_paid": bool(reviewer) and estimation.pause_by_default(reviewer),
+                "spend_agreed": bool(s["spend_agreed"]),
+                "destination": dict(s["destination"])}
 
     def dubbing_settings(self, cfg: dict | None = None) -> dict:
         """The settings of the Dubbing step: the engine of the configuration (available or not), the dubbed language
@@ -259,6 +264,7 @@ class ProjectRun:
         if current and not step and current.state(Stage.DOWNLOAD) == S.RUNNING:
             step = "download"
         return {**d, "order": "videos" if self.by_video else "steps", "counts": counts, "step": step, "total": len(d["videos"]), "concurrency": self.concurrency,
+                "review_stamp": self.review_stamp,
                 "avg_duration_s": round(sum(s for _, s in measures) / len(measures)) if measures else None,
                 "current": (current.video or current.source) if current else None,
                 "remaining_s": self.remaining_s(timing.known_rate(self.phase, self.options) if self.state == RunState.RUNNING else None),
@@ -288,7 +294,7 @@ class ProjectRun:
         """The item is what the current phase takes care of."""
         sub, dub = item.state(Stage.SUBTITLES), item.state(Stage.DUBBING)
         if self.phase in (1, 2):
-            waits = self.takes(item, Stage.SUBTITLES) and sub == (S.TODO if self.phase == 1 else S.PAUSED)
+            waits = self.takes(item, Stage.SUBTITLES) and (sub == S.TODO if self.phase == 1 else sub == S.PAUSED and item.id not in self.held)
             return waits or (self.by_video and self.phase == 1 and sub == S.DONE and item.state(Stage.DUBBING) == S.TODO
                              and self.takes(item, Stage.DUBBING) and self.wants_dubbing())
         return sub == S.DONE and dub == S.TODO and self.takes(item, Stage.DUBBING)
@@ -300,10 +306,12 @@ class ProjectRun:
 
     def next_item(self) -> Item | None:
         """Next item for the current phase, once its video is there. In phases 2 and 3, a video set back to do
-        ("Retry") starts again from the transcription, without a pause. Video by video: the first video, in the order
+        ("Retry") starts again from the transcription. Video by video: the first video, in the order
         of the list, with a step left (its dubbing once subtitled, otherwise its subtitles)."""
         ready = lambda i: stages.STRATEGIES[Stage.SUBTITLES].can_start(i)            # noqa: E731
         if self.by_video and self.phase == 1:
+            if any(i.state(Stage.SUBTITLES) == S.PAUSED and self.takes(i, Stage.SUBTITLES) for i in self.items()):
+                return None                    # a video waits for the user (a cost, the proposals of its review): the next ones after it
             dub = stages.STRATEGIES[Stage.DUBBING]
             for i in self.items():
                 if self.wants_dubbing() and i.state(Stage.DUBBING) == S.TODO and self.takes(i, Stage.DUBBING) and dub.can_start(i):
@@ -397,7 +405,7 @@ class ProjectRun:
         if self.downloads_left():
             return                             # their videos come to phase 1 when downloaded
         items = self.items()
-        if self.phase == 1 and any(i.state(Stage.SUBTITLES) == S.PAUSED for i in items):
+        if any(i.state(Stage.SUBTITLES) == S.PAUSED for i in items):     # after phase 1: paused again (see `held`), or a video put back to do
             self.state = RunState.AWAITING_TRANSLATION
         elif self.phase < 3 and any(self.video_state(i) == VideoState.TRANSLATED for i in items):
             self.phase, self.state = 3, RunState.RUNNING

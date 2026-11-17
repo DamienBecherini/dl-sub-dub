@@ -53,7 +53,7 @@ def run(entries: list[str], stages: list[Stage], cfg: dict, log, *, project_dir:
         g.projects.add_items(run_.id, items)
         log(i18n.t("log.cli_project_resume", file=run_.file))
     else:
-        options = {"transcription": transcription or "", "translator": translator or "", "pause": False}
+        options = {"transcription": transcription or "", "translator": translator or "", "spend_agreed": True}      # the command is the go-ahead
         if languages is not None:
             options["languages"] = language.normalize_codes(languages)
         if spoken_language:
@@ -66,7 +66,7 @@ def run(entries: list[str], stages: list[Stage], cfg: dict, log, *, project_dir:
         g.projects.set_project_settings(run_.id, {"order": order})
     g.projects.set_stages(run_.id, stages)
     if run_.state == RunState.SUSPENDED:
-        g.projects.resume(run_.id, {"pause": False})
+        g.projects.resume(run_.id, {"spend_agreed": True})
     else:
         g.projects.start(run_.id, stages)
     try:

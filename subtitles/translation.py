@@ -3,6 +3,7 @@
 Engines ("translators" entries of the configuration, `type` field):
   openai   OpenAI-compatible API: llama-server of the PC (started by the supervision if needed), Ollama, OpenAI, Mistral…
   claude   Anthropic API through the official SDK (key in the environment, never displayed)
+  claude_code  Claude Code installed on this machine, signed in with a Claude subscription (no API key, nothing billed)
   none     no translation
 Each subtitle is a numbered line; the answer must give back the same numbers. An incomplete chunk is sent again
 once, then split into smaller chunks; as a last resort the line stays in its language.
@@ -11,7 +12,11 @@ The instructions sent to the model are written in French.
 import json
 import os
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 import re
+import shutil
+import subprocess
+import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -71,6 +76,20 @@ def parse_answer(answer: str, expected: int) -> dict[int, str]:
     return {k: v for k, v in result.items() if v}
 
 
+def parse_json(answer: str) -> dict:
+    """The JSON object of an answer, even inside a ```json block or with text around it (local models); TranslationError
+    if there is none."""
+    text = answer.strip()
+    for candidate in (text, *re.findall(r"```(?:json)?\s*(.*?)```", text, flags=re.S), text[text.find("{"):text.rfind("}") + 1]):
+        try:
+            d = json.loads(candidate)
+        except ValueError:
+            continue
+        if isinstance(d, dict):
+            return d
+    raise TranslationError(i18n.t("err.answer_not_json", answer=text[:120]))
+
+
 def _json(url, body=None, key="", timeout=10):
     data = json.dumps(body).encode() if body is not None else None
     req = urllib.request.Request(url, data=data, method="POST" if data is not None else "GET",
@@ -94,6 +113,7 @@ class OpenAITranslator:
         self.key = ""
         self.log = log
         self.started_here = False
+        self.json_format = True                # `response_format` sent with a schema, until the server refuses it
 
     def _responds(self) -> bool:
         try:
@@ -128,13 +148,26 @@ class OpenAITranslator:
                 return
         raise TranslationError(i18n.t("err.local_ai_timeout"))
 
-    def complete(self, system: str, request: str) -> str:
-        body = {"model": self.model, "temperature": 0.2, "max_tokens": 4096, "stream": False,
-                "messages": [{"role": "system", "content": system}, {"role": "user", "content": request}]}
+    def complete(self, system: str, request: str, schema: dict | None = None, effort: str | None = None) -> str:
+        """`schema`: a JSON answer of this shape is asked for (`response_format`, and the shape written in the
+        instructions for the servers and models that do not follow it); a server that refuses `response_format` is asked
+        again without it. `effort` is Claude's: ignored here."""
+        asked = system
+        if schema:
+            asked += ("\n\nRéponds uniquement par un objet JSON de cette forme (schéma JSON), sans texte autour :\n"
+                      + json.dumps(schema, ensure_ascii=False))
+        body = {"model": self.model, "temperature": 0.2, "max_tokens": 8192 if schema else 4096, "stream": False,
+                "messages": [{"role": "system", "content": asked}, {"role": "user", "content": request}]}
+        if schema and self.json_format:
+            body["response_format"] = {"type": "json_schema", "json_schema": {"name": "answer", "schema": schema}}
         try:
             r = _json(self.url + "/v1/chat/completions", body, key=self.key, timeout=900)
         except urllib.error.HTTPError as e:
-            raise TranslationError(f"{self.url} : {e.code} {e.read().decode(errors='replace')[:300]}") from e
+            detail = e.read().decode(errors="replace")[:300]
+            if e.code in (400, 422) and "response_format" in body:      # this server does not know it: the instructions will do
+                self.json_format = False
+                return self.complete(system, request, schema, effort)
+            raise TranslationError(f"{self.url} : {e.code} {detail}") from e
         except (urllib.error.URLError, OSError) as e:
             raise TranslationError(i18n.t("err.url_unreachable", url=self.url, error=e)) from e
         text = r["choices"][0]["message"]["content"] or ""
@@ -165,6 +198,7 @@ class ClaudeTranslator:
         self.client = anthropic.Anthropic(api_key=key, max_retries=8)
         self.model = m.get("model", "claude-sonnet-5-5")
         self.effort = m.get("effort") or "low"
+        self.review_effort = m.get("review_effort") or "medium"     # for the AI review (see corrections.py): it reasons more than a translation
         self.log = log
         self.input_tokens = 0
         self.output_tokens = 0
@@ -173,15 +207,20 @@ class ClaudeTranslator:
         pass
 
     def complete(self, system: str, request: str, schema: dict | None = None, effort: str | None = None) -> str:
+        """`schema`: a JSON answer of this shape (the AI review). Such an answer can be long (a whole episode read, at
+        a high effort the reasoning counts in the output): it is streamed, so that nothing times out, with room for
+        64 000 tokens; an answer cut all the same is an error rather than half a JSON."""
         a = self.anthropic
         output = {"effort": effort or self.effort, **({"format": {"type": "json_schema", "schema": schema}} if schema else {})}
+        # Server-side fallback when the classifiers refuse (routing by category, without a list of models).
+        asked = dict(model=self.model, system=system, messages=[{"role": "user", "content": request}], output_config=output,
+                     betas=["server-side-fallback-2026-07-01"], fallbacks="default")
         try:
-            # Server-side fallback when the classifiers refuse (routing by category, without a list of models).
-            resp = self.client.beta.messages.create(
-                model=self.model, max_tokens=16000, system=system,
-                messages=[{"role": "user", "content": request}],
-                output_config=output,
-                betas=["server-side-fallback-2026-07-01"], fallbacks="default")
+            if schema:
+                with self.client.beta.messages.stream(max_tokens=64000, **asked) as stream:
+                    resp = stream.get_final_message()
+            else:
+                resp = self.client.beta.messages.create(max_tokens=16000, **asked)
         except a.RateLimitError as e:
             raise TranslationError(i18n.t("err.anthropic_rate_limit", s=e.response.headers.get("retry-after", "?"))) from e
         except a.APIStatusError as e:
@@ -195,6 +234,8 @@ class ClaudeTranslator:
         if u:
             self.input_tokens += getattr(u, "input_tokens", 0) or 0
             self.output_tokens += getattr(u, "output_tokens", 0) or 0
+        if schema and resp.stop_reason == "max_tokens":
+            raise TranslationError(i18n.t("err.anthropic_cut"))
         return "".join(b.text for b in resp.content if b.type == "text").strip()
 
     def finish(self):
@@ -205,12 +246,120 @@ class ClaudeTranslator:
                      + (f" ≈ {cost:.2f} $" if cost is not None else ""))
 
 
+_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+
+
+def claude_code_program(m: dict | None = None) -> str:
+    """Path of Claude Code on this machine, "" if it is not installed: the `program` field of the translator, otherwise
+    `claude` in the PATH."""
+    return shutil.which(str((m or {}).get("program") or "claude")) or ""
+
+
+def _claude_code_env() -> dict:
+    """The environment given to Claude Code: without what would make it bill an API (a key, another provider) and
+    without the variables of a Claude Code session the service was started from. Its sign-in is kept
+    (CLAUDE_CONFIG_DIR)."""
+    return {k: v for k, v in os.environ.items()
+            if not (k.startswith("ANTHROPIC_") or k.startswith("CLAUDE_CODE_") or k in ("CLAUDECODE", "AWS_BEARER_TOKEN_BEDROCK"))}
+
+
+def claude_code_status(m: dict | None = None) -> dict:
+    """{installed, signed_in, subscription}: whether Claude Code is on this machine and signed in with a Claude
+    subscription ("pro", "max"…; "" when it is signed in otherwise: a Console account, a key, another provider, which
+    would be billed)."""
+    program = claude_code_program(m)
+    if not program:
+        return {"installed": False, "signed_in": False, "subscription": ""}
+    try:
+        r = subprocess.run([program, "auth", "status", "--json"], capture_output=True, timeout=30, env=_claude_code_env(),
+                           stdin=subprocess.DEVNULL, creationflags=_NO_WINDOW)
+        d = json.loads(r.stdout.decode("utf-8", "replace") or "{}")
+    except (OSError, subprocess.SubprocessError, ValueError):
+        d = {}
+    if not isinstance(d, dict):
+        d = {}
+    with_plan = d.get("loggedIn") is True and d.get("authMethod") == "claude.ai"
+    return {"installed": True, "signed_in": d.get("loggedIn") is True,
+            "subscription": str(d.get("subscriptionType") or "claude.ai") if with_plan else ""}
+
+
+class ClaudeCodeTranslator:
+    """Claude Code of this machine, run once per request without a terminal (`claude -p`), on the Claude subscription
+    of the user: no API key, nothing billed, the usage counts in the limits of the subscription. It runs bare: no
+    tools, none of the user's hooks, instructions, skills or MCP servers (--safe-mode), no conversation kept. Refused
+    when Claude Code is not signed in with a subscription: it would then spend on an API without a question."""
+
+    def __init__(self, m: dict, log=print):
+        self.program = claude_code_program(m)
+        if not self.program:
+            raise TranslationError(i18n.t("err.claude_code_missing"))
+        self.settings = m
+        self.model = m.get("model") or "sonnet"         # an alias (sonnet, opus) or a full name
+        self.effort = m.get("effort") or "low"
+        self.review_effort = m.get("review_effort") or "medium"
+        self.log = log
+        self.checked = False
+        self.input_tokens = 0
+        self.output_tokens = 0
+
+    def prepare(self):
+        if self.checked:
+            return
+        s = claude_code_status(self.settings)
+        if not s["signed_in"]:
+            raise TranslationError(i18n.t("err.claude_code_signed_out"))
+        if not s["subscription"]:
+            raise TranslationError(i18n.t("err.claude_code_no_subscription"))
+        self.checked = True
+
+    def complete(self, system: str, request: str, schema: dict | None = None, effort: str | None = None) -> str:
+        """The instructions go through a file and the request through the standard input (no limit of length, no
+        quoting); `schema`: a JSON answer of this shape, checked by Claude Code itself."""
+        self.prepare()
+        with tempfile.TemporaryDirectory(prefix="dl-sub-dub-claude-") as folder:
+            instructions = Path(folder) / "instructions.txt"
+            instructions.write_text(system, encoding="utf-8")
+            command = [self.program, "-p", "--safe-mode", "--tools", "", "--strict-mcp-config", "--no-session-persistence",
+                       "--disable-slash-commands", "--model", self.model, "--effort", effort or self.effort,
+                       "--output-format", "json", "--system-prompt-file", str(instructions)]
+            if schema:
+                command += ["--json-schema", json.dumps(schema, ensure_ascii=True)]
+            try:
+                r = subprocess.run(command, input=request.encode("utf-8"), capture_output=True, timeout=1800, cwd=folder,
+                                   env=_claude_code_env(), creationflags=_NO_WINDOW)
+            except subprocess.TimeoutExpired as e:
+                raise TranslationError(i18n.t("err.claude_code_failed", detail="timeout")) from e
+            except OSError as e:
+                raise TranslationError(i18n.t("err.claude_code_failed", detail=e)) from e
+        out = r.stdout.decode("utf-8", "replace").strip()
+        try:
+            d = json.loads(out)
+        except ValueError:
+            d = None
+        if not isinstance(d, dict):
+            raise TranslationError(i18n.t("err.claude_code_failed", detail=(r.stderr.decode("utf-8", "replace").strip() or out)[:300]))
+        if d.get("is_error") or d.get("subtype") not in (None, "success"):
+            raise TranslationError(i18n.t("err.claude_code_failed", detail=str(d.get("result") or d.get("subtype") or "?")[:300]))
+        u = d.get("usage") or {}
+        self.input_tokens += sum(int(u.get(k) or 0) for k in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"))
+        self.output_tokens += int(u.get("output_tokens") or 0)
+        if schema and d.get("structured_output") is not None:
+            return json.dumps(d["structured_output"], ensure_ascii=False)
+        return str(d.get("result") or "").strip()
+
+    def finish(self):
+        if self.input_tokens or self.output_tokens:
+            self.log(i18n.t("log.claude_code_usage", model=self.model, tokens_in=self.input_tokens, tokens_out=self.output_tokens))
+
+
 def create(m: dict, log=print):
     t = m.get("type", "openai")
     if t == "openai":
         tr = OpenAITranslator(m, log)
     elif t == "claude":
         tr = ClaudeTranslator(m, log)
+    elif t == "claude_code":
+        tr = ClaudeCodeTranslator(m, log)
     else:
         raise TranslationError(i18n.t("err.unknown_translator_type", type=t))
     tr.at_once = chunks_at_once(m)                  # chunks of a video sent together (translate_texts)
@@ -219,7 +368,7 @@ def create(m: dict, log=print):
 
 def concurrency(m: dict) -> int:
     """Videos of a project translated at once: `parallel` field of the translator, else 5 for Claude (remote API)
-    and 1 for the others (a local AI handles only one)."""
+    and 1 for the others (a local AI handles only one; Claude Code spares the limits of the subscription)."""
     try:
         n = int(m.get("parallel") or (CLAUDE_CONCURRENCY if m.get("type") == "claude" else 1))
     except (TypeError, ValueError):

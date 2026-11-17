@@ -182,6 +182,13 @@ def open_in_file_manager(req):
     return 200, {"ok": True}
 
 
+@route("GET", "/api/claude-code")
+def claude_code(req):
+    """Whether Claude Code is installed on this machine and signed in with a subscription (the Settings then propose
+    it as a translator)."""
+    return 200, translation.claude_code_status()
+
+
 @route("POST", "/api/test")
 def test_an_engine(req):
     """{kind: "transcription"|"translator", engine: {...}}"""

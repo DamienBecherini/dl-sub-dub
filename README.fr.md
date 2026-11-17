@@ -49,7 +49,7 @@ flowchart TB
   end
   subgraph s3["3. Sous-titres"]
     direction LR
-    tr["Transcription<br/>(votre serveur)"] --> rev["Relecture IA<br/>des noms<br/>(facultative)"] --> val["Validation<br/>par vous"] --> tl["Traduction<br/>(coût affiché avant,<br/>si elle est payante)"]
+    tr["Transcription<br/>(votre serveur)"] --> rev["Relecture IA<br/>(facultative)"] --> val["Validation<br/>par vous"] --> tl["Traduction<br/>(coût affiché avant,<br/>si elle est payante)"]
   end
   subgraph s4["4. Doublage (facultatif)"]
     direction LR
@@ -73,8 +73,8 @@ Chaque vidéo peut aussi faire ses étapes toute seule, et avoir ses propres ré
 | Le projet : une vidéo du web (ce que propose son site) et deux fichiers déjà sous-titrés | Réglages par catégories : ici, ce avec quoi un projet démarre |
 |---|---|
 | [![La page](docs/images/fr/workshop-dark.png)](docs/images/fr/workshop-dark.png) | [![Page des réglages](docs/images/fr/settings-light.png)](docs/images/fr/settings-light.png) |
-| **Le résultat, ici en anglais** | **Le même projet sur un téléphone** |
-| [![Vidéo sous-titrée en anglais](docs/images/fr/result-en.png)](docs/images/fr/result-en.png) | [<img src="docs/images/fr/workshop-phone-dark.png" alt="La page sur un téléphone : chaque vidéo en carte" width="300">](docs/images/fr/workshop-phone-dark.png) |
+| **Claude Code trouvé sur l'ordinateur : proposé comme traducteur, sur votre abonnement** | **Le même projet sur un téléphone** |
+| [![Les Réglages proposent Claude Code](docs/images/fr/settings-claude-code-dark.png)](docs/images/fr/settings-claude-code-dark.png) | [<img src="docs/images/fr/workshop-phone-dark.png" alt="La page sur un téléphone : chaque vidéo en carte" width="300">](docs/images/fr/workshop-phone-dark.png) |
 
 Les vidéos de démonstration sont fabriquées sur place (synthèse vocale de Windows sur des [photos Unsplash](docs/demo/backgrounds/CREDITS.md), `docs/demo/videos_demo.py`) : une
 narration en français, transcrite par [transcription-handy-like](https://github.com/DamienBecherini/transcription-handy-like/blob/main/README.fr.md)
@@ -189,6 +189,7 @@ Dans **Réglages › Traduction**, ajoutez un traducteur :
 | Modèle local avec llama.cpp | `openai` | `http://127.0.0.1:8080` | L'adresse de base, sans `/v1`. |
 | Modèle local avec Ollama | `openai` | `http://127.0.0.1:11434` | Le modèle est déchargé avant un doublage. |
 | API Claude | `claude` | (aucune) | Lancez d'abord `.venv/bin/pip install ".[claude]"`. Payant : le projet s'arrête après la transcription pour afficher le coût. |
+| Claude Code, sur votre abonnement Claude | `claude_code` | (aucune) | Claude Code installé sur cette machine et connecté avec un abonnement Claude : pas de clé API, rien de facturé, l'usage compte dans les limites de l'abonnement. Les Réglages le proposent quand il est trouvé. Voir [la référence](docs/reference.fr.md#relecture-ia-facultative). |
 | Autre API compatible OpenAI (OpenAI, Mistral, Groq…) | `openai` | Celle du fournisseur | Payant, même pause avant la traduction. |
 
 [AGENTS.md](AGENTS.md) donne un tableau pour choisir un modèle local selon la carte graphique et la mémoire.
@@ -293,6 +294,14 @@ traduction payante qui attend), `new_project` (adresses, fichiers, dossiers, lis
 doit vous demander avant `approve_translation`. **Seulement pour des vidéos, et des voix, que vous avez le droit
 d'utiliser.**
 
+L'assistant peut aussi relire lui-même une vidéo (« relis l'épisode 3 et corrige ce qui a été mal entendu », « la
+traduction anglaise tient-elle debout ? ») : `get_subtitles` lui donne les sous-titres d'une vidéo, numérotés, dans la
+langue parlée ou une traduction avec l'original sous chaque ligne ; `propose_corrections` envoie les lignes à corriger,
+qui arrivent dans la page comme celles de la relecture IA et y attendent votre décision (rien n'est appliqué sans
+elle) ; `pending_corrections` dit ce qui attend encore. Une fois décidé, l'étape Sous-titres de la vidéo, relancée,
+applique les corrections et retraduit les lignes changées. Il relit la transcription, dans sa langue : il lit une
+traduction mais ne corrige pas ses lignes.
+
 ### L'API
 
 L'interface web s'appuie sur une API JSON locale, sur `http://127.0.0.1:4420`, utilisable aussi par des scripts. Elle n'a
@@ -300,24 +309,25 @@ pas d'authentification : elle n'écoute que sur la machine elle-même, et refuse
 
 | Requête | Rôle |
 | --- | --- |
-| `POST /api/tasks` `{source, languages?, translator?, transcription?, output_dir?, pause?}` | une vidéo (fichier ou adresse) → tâche |
+| `POST /api/tasks` `{source, languages?, translator?, transcription?, output_dir?, pause?, spend_agreed?}` | une vidéo (fichier ou adresse) → tâche |
 | `GET /api/tasks/<id>?since=N` | état, étape en cours, lignes du journal à partir de N |
 | `POST /api/tasks/<id>/translate` `{translator?, languages?}` | suite d'une tâche en pause avant la traduction |
 | `POST /api/folder` `{path}` puis `GET /api/folder/<id>?videos=1` | inventaire des vidéos d'un dossier |
 | `POST /api/youtube` `{url}` | titre et durée d'une adresse de vidéo, ou la playlist qu'elle désigne, sans rien télécharger |
 | `POST /api/playlist` `{url}` puis `GET /api/playlist/<id>` | télécharger toute une playlist dans un dossier, à ouvrir ensuite avec `/api/folder` |
 | `POST /api/sources` `{entries}` | ce qu'ajoute Sélection : les vidéos d'adresses, playlists, fichiers, dossiers et listes, sans rien télécharger |
-| `POST /api/projects` `{items: [{source, language?}], stages?, title?, settings?: {languages?, translator?, pause?…}, location?: {base, named}, start?}` | un projet : ses vidéos (fichiers ou adresses), ses étapes, ses réglages ; `start` le lance aussitôt |
+| `POST /api/projects` `{items: [{source, language?}], stages?, title?, settings?: {languages?, translator?, review?, spend_agreed?…}, location?: {base, named}, start?}` | un projet : ses vidéos (fichiers ou adresses), ses étapes, ses réglages ; `start` le lance aussitôt |
 | `GET /api/projects`, `GET /api/projects/<id>`, `GET /api/projects/<id>/events` | les projets ouverts ; le résumé de l'un (`state`, `phase`, `step` de la vidéo en cours, comptes, temps restant, chaque vidéo avec ses étapes et ce qu'on peut en faire), ou le même envoyé à chaque changement (Server-Sent Events) |
 | `POST /api/projects/load` `{file}` puis `POST /api/projects/<id>/resume` | reprendre d'après un `dl-sub-dub.project.json` (ou un ancien `subtitles.batch.json`) |
-| `POST /api/projects/<id>/suspend`, `stop`, `cancel`, `translate` | piloter un projet (`suspend` : après la vidéo en cours ; `stop` : tout de suite, la vidéo revient dans la liste) |
+| `POST /api/projects/<id>/suspend`, `stop`, `cancel`, `translate` | piloter un projet (`suspend` : après la vidéo en cours ; `stop` : tout de suite, la vidéo revient dans la liste ; `translate` `{translator?, languages?, review?, review_engine?}` : l'accord pour la relecture IA et la traduction qui attendent) |
+| `GET /api/projects/<id>/estimate`, `GET /api/projects/<id>/review`, `POST /api/projects/<id>/validate` `{decisions?, lines?}` | ce que coûteraient les vidéos qui attendent (relecture IA, traduction) ; ce que la relecture IA propose (noms, lignes de chaque vidéo) ; vos décisions |
 | `POST /api/projects/<id>/location` `{title?, base?, named?}` | renommer le projet ; le déplacer tant que rien n'a commencé |
 | `POST /api/projects/<id>/start` `{stages?, only?}` (sans `stages` : les étapes cochées), `/select`, `/settings`, `/items/<item>/run` `{stage}` (ou `{stages}` : l'une après l'autre), `/items/<item>/cancel` | lancer des étapes, cocher, réglages, une vidéo une étape (ou plusieurs à la suite) |
 | `GET /api/projects/<id>/items/<item>/log` | le journal du téléchargement d'une vidéo |
 | `GET /api/health` | occupé ou non, activité, temps restant ([référence](docs/reference.fr.md#le-service)) |
 
 ```
-curl -s -X POST localhost:4420/api/projects -H "Content-Type: application/json"   -d '{"items": [{"source": "D:/Séries/S1/e01.mkv"}], "settings": {"languages": ["fr"], "pause": false}, "start": true}'
+curl -s -X POST localhost:4420/api/projects -H "Content-Type: application/json"   -d '{"items": [{"source": "D:/Séries/S1/e01.mkv"}], "settings": {"languages": ["fr"], "spend_agreed": true}, "start": true}'
 curl -s localhost:4420/api/projects/<id>
 ```
 
@@ -327,7 +337,7 @@ curl -s localhost:4420/api/projects/<id>
 - **Rien n'est refait.** Une étape dont le résultat existe sur le disque est sautée. Un projet reprend après une coupure, un téléchargement arrêté reprend où il en était, un doublage arrêté garde les phrases déjà faites, et changer une langue ou la mise en forme ne retranscrit pas.
 - **Deux ordres de travail.** Étape par étape (toutes les vidéos passent une étape, puis la suivante : le coût de toutes les traductions avant d'en payer une) ou vidéo par vidéo (une première vidéo finie plus tôt).
 - **Vos retouches sont gardées.** Un `.srt` modifié à la main n'est pas écrasé ; le doublage et le MKV utilisent votre version.
-- **Les noms propres.** La transcription les déforme souvent. La relecture IA facultative (Claude) les repère, et rien n'est corrigé sans votre validation.
+- **Les noms propres et les mots mal entendus.** La transcription déforme souvent les noms et les mots rares, et invente parfois une phrase pendant un silence. La relecture IA facultative (les noms seuls, ou chaque sous-titre ; par Claude, un modèle local ou une API compatible OpenAI) propose des corrections, et rien n'est corrigé sans votre validation. Un petit modèle local en laisse passer plus qu'un grand.
 - **Les répliques courtes d'un dialogue.** Une phrase trop courte pour bien cloner une voix n'est complétée que par des répliques proches de la même personne, reconnue par un modèle de reconnaissance du locuteur (WavLM, 380 Mo, téléchargé au premier doublage) : un homme ne prend pas la voix de la femme qui lui répond.
 - **L'original est respecté.** Le MKV est créé à côté de la vidéo, sans réencodage. Une option le met à sa place ; l'original part alors à la corbeille.
 - **Un fichier téléchargé garde son adresse.** Ajouté plus tard à un autre projet, il propose encore les pistes audio et les sous-titres de son site (onglet Téléchargement de sa ligne), et coller son adresse dans ce projet ne le télécharge pas une seconde fois.

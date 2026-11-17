@@ -91,9 +91,22 @@ Ce qui est fait est relu sur le disque : une étape faite n'est pas refaite, mê
 - Pendant qu'une vidéo est sous-titrée ou doublée, les langues (du projet, et les siennes) sont verrouillées : elle garde celles avec lesquelles elle a démarré. Elles se changent une fois la vidéo finie, ou après Arrêter. Une vidéo qui attend l'accord pour sa traduction prend les langues au moment où elle est traduite.
 - Les vidéos téléchargées gardent leur adresse à l'intérieur (affichée comme Source dans Informations).
 
-### Relecture IA des noms
+### Relecture IA (facultative)
 
-La relecture IA (Claude) repère les noms propres déformés. Un nom n'est soumis qu'une fois par projet. Rien n'est corrigé sans validation : les noms acceptés vont dans `subtitles.glossary.json`, et `transcription.json` n'est jamais réécrit.
+Avant la traduction, un modèle peut relire la transcription et proposer des corrections. Rien n'est corrigé sans votre décision, et `transcription.json` n'est jamais réécrit. La relecture se choisit par projet (réglages des Sous-titres, **Relecture par l'IA**), avec un choix par défaut pour les nouveaux projets dans les Réglages.
+
+- **Les noms propres.** Les noms que la transcription a déformés, avec leur contexte. Un nom n'est soumis qu'une fois par projet. Les noms acceptés vont dans `subtitles.glossary.json` : ils corrigent toutes les vidéos du projet et guident la traduction.
+- **Complète.** Les noms, puis chaque sous-titre de chaque vidéo, lu dans l'ordre avec son contexte : un mot mal entendu, un chiffre, une date, une phrase qui n'a jamais été dite (inventée pendant un silence, dans une autre langue). Chaque ligne à corriger arrive avec sa raison, les corrections peu sûres décochées ; vous acceptez, retouchez ou refusez. Les corrections acceptées sont gardées dans le dossier de travail de la vidéo (`corrections.json`) et remplacent les mots de la ligne avant le découpage des sous-titres et leur traduction. Une vidéo n'est relue qu'une fois.
+- **Le modèle de relecture** est un des traducteurs des Réglages : Claude, un modèle local, un modèle sur une autre machine, une API compatible OpenAI. Automatique : un traducteur Claude s'il y en a un (celui du projet ; sinon Claude Code, sur votre abonnement, avant l'API Claude, payante), sinon le traducteur du projet. Claude lit 800 sous-titres par requête (la plupart des épisodes d'un coup), un autre modèle 120. Pour Claude, l'effort de la relecture se règle sur le traducteur (Réglages, **Effort pour la relecture IA**, medium par défaut) : sur un dialogue bruité, un effort plus élevé, ou un modèle plus fort, trouve plusieurs fois plus d'erreurs, pour quelques centimes de plus par épisode (l'estimation en tient compte). Un petit modèle local propose moins, et parfois à tort : ses corrections sont des conseils à vérifier, jamais appliqués d'office.
+- **Claude Code comme modèle** (traducteur de type `claude_code`, pour la relecture et pour la traduction) : quand Claude Code est installé sur la machine et connecté avec un abonnement Claude, les Réglages proposent de l'ajouter. Il est alors lancé une fois par requête, sans terminal, sur votre abonnement : pas de clé API, rien de facturé, donc le projet ne s'arrête pas pour un coût ; l'usage compte dans les limites de votre abonnement, et l'estimation est donnée en jetons. Il tourne à nu : sans outils, sans vos hooks, vos instructions, vos skills ni vos serveurs MCP, et aucune conversation n'est gardée. Le service vérifie d'abord que Claude Code est connecté avec un abonnement et retire les clés API de son environnement : connecté autrement (compte Console, clé, autre fournisseur), il serait facturé, donc il est refusé avec un message. Quand les limites de l'abonnement sont atteintes, la relecture ou la traduction s'arrête avec le message de Claude Code et reprend plus tard là où elle en était. Champs : `model` (un alias, `sonnet` ou `opus`, ou un nom complet), `effort`, `review_effort`, `program` (son chemin s'il n'est pas dans le `PATH`). Essayé sous Windows avec Claude Code 2.1.326 (17/11/2026 : la relecture complète de 613 sous-titres en 8 s, environ 14 000 jetons) ; pas essayé sous Linux ni macOS. Les conditions d'Anthropic pour cet usage d'un abonnement s'appliquent, et elles ont changé plusieurs fois en 2026 : vérifiez-les ([« Use the Claude Agent SDK with your Claude plan »](https://support.claude.com/en/articles/15036540-use-the-claude-agent-sdk-with-your-claude-plan)).
+- **Un modèle payant demande toujours avant.** Quel que soit l'ordre du travail, le projet s'arrête avant une relecture ou une traduction par un modèle payant et affiche son coût estimé pour chaque modèle ; la relecture peut y être confiée à un autre modèle, ou abandonnée. Un seul accord vaut pour la relecture et la traduction des vidéos qui attendent. **Ne plus me demander avant de dépenser dans ce projet**, dans ce panneau, met fin aux questions pour ce projet (une case de ses réglages des Sous-titres les rétablit).
+- **Ce que la relecture propose attend toujours votre décision**, puis la traduction continue. Étape par étape, toutes les vidéos sont d'abord transcrites (et relues, quand le modèle est gratuit), puis le projet s'arrête une fois pour toutes. Vidéo par vidéo, le projet s'arrête à chaque vidéo, et les suivantes l'attendent.
+- **Pour une seule vidéo** (son onglet Sous-titres) : sa propre relecture, par exemple complète pour un épisode difficile, ou aucune.
+- Une correction acceptée après la traduction s'applique la prochaine fois que la vidéo est sous-titrée (relancez son étape Sous-titres) : ses sous-titres sont redécoupés et les lignes dont l'original a changé sont retraduites, seules, les autres gardées (un traducteur payant demande d'abord, avec une estimation qui compte toute la vidéo : un maximum). Une traduction faite par une version antérieure, sans ses originaux gardés (`translation.<langue>.source.json`), reste telle quelle : refaites-la.
+- Dans la page, ce que la relecture propose passe d'abord : son panneau est affiché seul, et l'accord pour la traduction apparaît une fois que vous avez validé (**Valider et continuer**). **Plus tard** affiche l'accord tout de suite et laisse les propositions dessous : rien n'est corrigé sans décision.
+- **Un assistant comme relecteur** (le serveur MCP, voir le README) : il lit les sous-titres d'une vidéo (`get_subtitles` ; `GET /api/projects/<id>/items/<vidéo>/subtitles`, `?language=` pour une traduction) et propose des lignes à corriger (`propose_corrections` ; `POST …/items/<vidéo>/corrections` avec `{corrections: [{line, corrected, reason, confidence}], by, complete}`). Elles sont gardées selon les mêmes règles que celles d'un modèle (une ligne de la vidéo, vraiment changée, pas allongée par ses voisines ; les refusées sont dites avec la raison), attendent votre décision dans la page, et une vidéo lue en entier de cette façon n'est pas relue par la relecture IA du projet. Pas pendant que les sous-titres de la vidéo sont en cours de fabrication.
+- Une relecture qui échoue (modèle arrêté, réponse illisible) n'arrête pas la vidéo : elle reprend où elle s'était arrêtée la fois suivante.
+- L'estimation d'une relecture repose sur des constantes mesurées sur deux vidéos (`review_*` dans `[estimation]` de `subtitles/config.toml`).
 
 ### Doublage (facultatif, désactivé par défaut)
 
@@ -157,9 +170,9 @@ Au-dessus de la liste :
 
 | Groupe | Ce qu'on y règle |
 |---|---|
-| Langues, ordre du travail | Toujours visibles (voir le tableau suivant pour l'ordre). |
+| Langues, ordre du travail, relecture IA | Toujours visibles (voir le tableau suivant pour l'ordre, et [Relecture IA](#relecture-ia-facultative)). |
 | Doublage | Les langues doublées, un MKV avec toutes les pistes ou la voix doublée seule, le MKV à la place de la vidéo. |
-| Sous-titres | Les moteurs (ceux marqués « Par défaut » dans les Réglages, sauf si le projet ou une vidéo en choisit un autre), la langue parlée, la pause avant une traduction payante (cochée par défaut pour un traducteur payant), la relecture IA des noms, l'endroit des fichiers (à côté de la vidéo et/ou dans le dossier de sortie). |
+| Sous-titres | Les moteurs (ceux marqués « Par défaut » dans les Réglages, sauf si le projet ou une vidéo en choisit un autre), la langue parlée, l'attente de votre accord avant une traduction gratuite aussi (un modèle payant l'attend toujours), l'endroit des fichiers (à côté de la vidéo et/ou dans le dossier de sortie). |
 | Téléchargement | La qualité des vidéos du projet. |
 | Carte graphique | La traduction et le doublage ensemble ou une IA à la fois (voir [Doublage](#doublage-facultatif-désactivé-par-défaut)). |
 
@@ -168,7 +181,7 @@ Au-dessus de la liste :
 | Ordre | Ce qu'il fait | Intérêt |
 |---|---|---|
 | *Étape par étape* (par défaut) | Toutes les vidéos passent une étape, puis la suivante. | Le coût de toutes les traductions est affiché avant d'en payer une ; chaque IA n'est chargée qu'une fois. |
-| *Vidéo par vidéo* | Chaque vidéo va au bout, puis la suivante. | Une première vidéo finie plus tôt ; pas de pause avant la traduction ; avec une IA à la fois, la carte graphique est libérée à chaque vidéo. |
+| *Vidéo par vidéo* | Chaque vidéo va au bout, puis la suivante. | Une première vidéo finie plus tôt ; avec une IA à la fois, la carte graphique est libérée à chaque vidéo. |
 
 ### Lancer, suivre, arrêter
 
@@ -183,7 +196,8 @@ Ce que la page montre pendant le travail :
 
 - **Un doublage en plusieurs langues** : la voix en cours (« Doublage (voix 2 sur 3) »), et le temps restant pour toutes les voix.
 - **Un téléchargement** : ses parties (vidéo, audio, finition) et son étape en clair (lecture du site, vidéo, audio, fusion, miniature), avec la vitesse et le temps restant.
-- **Une traduction qui attend votre accord** : son estimation par traducteur (requêtes, jetons, prix ou durée ; constantes dans `[estimation]` de `subtitles/config.toml`), avec **Traduire**.
+- **Une relecture IA ou une traduction qui attend votre accord** : son estimation par modèle (prix ou durée ; constantes dans `[estimation]` de `subtitles/config.toml`), avec **Relire, puis traduire** ou **Traduire**.
+- **Ce que la relecture IA propose** : les noms et les lignes à vérifier, avec **Valider**.
 - **Le temps restant**, calculé par le service. Il part de la durée de chaque vidéo (ou du nombre de lignes pour une traduction) et de la vitesse observée sur les vidéos du projet. Avant la première mesure, il reprend la vitesse retenue des sessions précédentes (`speeds.json`, à côté de `config.json`), sinon le champ `speed` du serveur de transcription. Une vidéo reprise en quelques secondes n'est pas comptée.
 
 **Ouvrir** lit une vidéo dans le lecteur par défaut, qui charge les sous-titres posés à côté. La page suit le travail au fil de ce que le service lui envoie (Server-Sent Events).

@@ -13,7 +13,7 @@ import { Notices, OrderSwitch } from "./common.js";
 import { act, api, busy, duration, html, isAddress, keepInside, listOf, originOf, STAGES, T, tabKeys, Tip, update, useMenu, useStore } from "./lib.js";
 import { AddBox, LastProject, ProjectHead, VideoList } from "./select.js";
 import { actIcon, DETAILS, lackShort, lackText, LineButtons, PlayButton, playPath, roughly, roughlyLeft, workParts, workText } from "./stage.js";
-import { ProjectLanguages, SubtitleSettings } from "./subtitles.js";
+import { ProjectLanguages, ReviewQuick, SubtitleSettings } from "./subtitles.js";
 
 const CONTROLS = "button, input, select, a, label, textarea, .tip";       // a click on them does not fold the line
 
@@ -511,8 +511,8 @@ function Adding({ p }) {
     : html`<div class="adding"><button type="button" class="secondary" onClick=${() => setOpen(true)}>${T("v2.add.unfold")}</button></div>`;
 }
 
-/* The settings of the project. Always shown under its title, the two set for each project: its languages and the
-   order of the work; unfolded, the others from the most used to the rarest. */
+/* The settings of the project. Always shown under its title, those set for each project: its languages, the
+   order of the work and the AI review; unfolded, the others from the most used to the rarest. */
 function ProjectSettings({ s, p, hasAddresses }) {
   const [open, setOpen] = useState(false);
   const head = useRef(null);
@@ -530,6 +530,10 @@ function ProjectSettings({ s, p, hasAddresses }) {
         <div class="ps-field">
           <span class="field-label">${T("v2.order.label")}</span>
           <${OrderSwitch} p=${p} />
+        </div>
+        <div class="ps-field ps-review">
+          <span class="field-label">${T("v2.review.label")}</span>
+          <${ReviewQuick} p=${p} cfg=${s.config} />
         </div>
       </div>
       ${open && html`

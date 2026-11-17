@@ -66,15 +66,20 @@
       <div class="grid">
         <label><span class="label-line"><span data-i18n="ui.cfg.default_language"></span> <span class="tip" role="button" tabindex="0" data-i18n-tip="ui.tip.default_language">?</span></span> <input type="text" id="cfg-language" data-i18n-placeholder="ui.cfg.default_language_placeholder"></label>
         <label><span class="label-line"><span data-i18n="v2.sub.pause"></span> <span class="tip" role="button" tabindex="0" data-i18n-tip="v2.sub.pause_title">?</span></span>
-          <select id="cfg-proj-pause"><option value="" data-i18n="ui.cfg.pause_auto"></option><option value="on" data-i18n="ui.cfg.pause_on"></option><option value="off" data-i18n="ui.cfg.pause_off"></option></select></label>
+          <select id="cfg-proj-pause"><option value="" data-i18n="ui.cfg.pause_auto"></option><option value="on" data-i18n="ui.cfg.pause_on"></option></select></label>
       </div>
       <h4 data-i18n="ui.cfg.steps_ticked"></h4>
       <div class="checks">
         <label class="check"><input type="checkbox" id="cfg-proj-dubbing"> <span class="label-line"><span data-i18n="ui.cfg.dub_step"></span> <span class="tip" role="button" tabindex="0" data-i18n-tip="ui.tip.dub_step">?</span></span></label>
       </div>
       <h4 data-i18n="v2.step.subtitles"></h4>
+      <div class="grid">
+        <label><span class="label-line"><span data-i18n="v2.sub.review"></span> <span class="tip" role="button" tabindex="0" data-i18n-tip="v2.sub.review_title">?</span></span>
+          <select id="cfg-proj-review"><option value="" data-i18n="v2.sub.review_mode.none"></option><option value="names" data-i18n="v2.sub.review_mode.names"></option><option value="full" data-i18n="v2.sub.review_mode.full"></option></select></label>
+        <label><span class="label-line"><span data-i18n="v2.sub.review_engine"></span> <span class="tip" role="button" tabindex="0" data-i18n-tip="v2.sub.review_engine_title">?</span></span>
+          <select id="cfg-proj-review-engine"></select></label>
+      </div>
       <div class="checks">
-        <label class="check"><input type="checkbox" id="cfg-proj-review"> <span class="label-line"><span data-i18n="v2.sub.review"></span> <span class="tip" role="button" tabindex="0" data-i18n-tip="v2.sub.review_title">?</span></span></label>
         <label class="check"><input type="checkbox" id="cfg-dest-next-to"> <span data-i18n="v2.sub.next_to_video"></span></label>
         <label class="check"><input type="checkbox" id="cfg-dest-output"> <span data-i18n="v2.sub.output_dir"></span></label>
       </div>
@@ -89,6 +94,10 @@
       <h3 class="cfg-title"><a class="cfg-back" href="#" data-i18n-aria-label="ui.cfg.back_list" data-i18n-title="ui.cfg.back_list">←</a> <span id="cat-translation-title" tabindex="-1" data-i18n="ui.cfg.cat.translation"></span></h3>
       <p class="help" data-i18n-html="ui.cfg.keys_help"></p>
       <h4><span data-i18n="ui.cfg.translators"></span> <button type="button" class="secondary small" id="btn-add-translator" data-i18n="ui.add"></button></h4>
+      <div class="offer" id="claude-code-offer" hidden>
+        <div class="offer-text"><strong data-i18n="ui.cfg.claude_code_found"></strong> <span data-i18n="ui.cfg.claude_code_help"></span></div>
+        <button type="button" class="primary" id="btn-add-claude-code" data-i18n="ui.cfg.claude_code_add"></button>
+      </div>
       <div id="translator-list" class="engine-list"></div>
       <div class="grid">
         <label><span class="label-line"><span data-i18n="ui.cfg.chunk"></span> <span class="tip" role="button" tabindex="0" data-i18n-tip="ui.tip.chunk">?</span></span> <input type="number" id="cfg-chunk" min="1" max="100"></label>
@@ -236,12 +245,16 @@
         <select data-field="type">
           <option value="openai" data-i18n="ui.eng.type_openai"></option>
           <option value="claude" data-i18n="ui.eng.type_claude"></option>
+          <option value="claude_code" data-i18n="ui.eng.type_claude_code"></option>
           <option value="none" data-i18n="ui.eng.type_none"></option>
         </select>
       </label>
       <label><span data-i18n="ui.model"></span> <input type="text" data-field="model"></label>
       <label><span class="label-line"><span data-i18n="ui.eng.effort_claude"></span> <span class="tip" role="button" tabindex="0" data-i18n-tip="ui.tip.effort">?</span></span>
         <select data-field="effort"><option value="" data-i18n="ui.effort_default"></option><option value="low">low</option><option value="medium">medium</option><option value="high">high</option></select>
+      </label>
+      <label><span class="label-line"><span data-i18n="ui.eng.review_effort"></span> <span class="tip" role="button" tabindex="0" data-i18n-tip="ui.tip.review_effort">?</span></span>
+        <select data-field="review_effort"><option value="" data-i18n="ui.review_effort_default"></option><option value="low">low</option><option value="medium">medium</option><option value="high">high</option><option value="xhigh">xhigh</option></select>
       </label>
       <label><span data-i18n="ui.eng.url_openai"></span> <input type="text" data-field="url" placeholder="http://127.0.0.1:8080"></label>
       <label><span data-i18n="ui.eng.key"></span> <input type="text" data-field="key" data-i18n-placeholder="ui.eng.key_placeholder"></label>

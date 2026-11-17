@@ -84,13 +84,13 @@ def test_phase_1_starts_again_with_the_project_options(tmp_path, monkeypatch):
     assert (run.videos[0]["state"], run.videos[0]["task"]) == ("running", t.id)
 
 
-def test_phase_2_redoes_the_whole_video_without_pause(tmp_path, monkeypatch):
+def test_phase_2_redoes_the_whole_video_and_asks_before_a_paid_model_as_ever(tmp_path, monkeypatch):
     g = manager(tmp_path, monkeypatch)
     run = a_project(g, tmp_path, ["done", "error"], phase=2)
     g.projects.retry(run.id)
     g.projects.feed()
     t = next(iter(g.queue.tasks.values()))
-    assert t.options["source"] == "/v1.mp4" and t.options["pause"] is False
+    assert t.options["source"] == "/v1.mp4" and t.options["pause"] is True and t.options["check_names"] is True
 
 
 def test_phase_2_translates_the_ready_videos_first(tmp_path, monkeypatch):

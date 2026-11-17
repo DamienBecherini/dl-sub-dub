@@ -63,6 +63,13 @@ effort = "low"                            # thinking depth (low, medium, high): 
 # parallel = 5                            # videos of a batch translated at once (5 by default for Claude, 1 for a local AI)
 key = "env:ANTHROPIC_API_KEY"
 
+# [[translators]]                         # Claude Code installed on this machine, on your Claude subscription: no key,
+# id = "claude-code"                      # nothing billed (the usage counts in the limits of the plan). The Settings
+# type = "claude_code"                    # propose it when it is found; refused when it is signed in otherwise.
+# model = "sonnet"                        # an alias (sonnet, opus) or a full model name
+# review_effort = "medium"                # effort for the AI review, as for the Claude API
+# program = "claude"                      # its path, when it is not in the PATH
+
 [[translators]]
 id = "none"
 type = "none"
@@ -93,6 +100,15 @@ chunk_size = 25                           # subtitles sent to the model per requ
 input_tokens_per_line = 36                # per subtitle and per language (instructions + chunk + context included)
 output_tokens_per_line = 23
 local_seconds_per_line = 0.6              # time per subtitle of a local model, to adjust to the machine
+# AI review (shown before a review by a paid model): measured 17/11/2026 on two videos (Sonnet 5.5, effort medium)
+review_request_tokens = 700               # the instructions, sent with each request
+review_input_tokens_per_line = 24         # full review: a numbered subtitle
+review_output_tokens_per_line = 4         # the fixes and the reasoning of the model, spread over every subtitle
+review_input_tokens_per_name = 65         # review of the names: a name with its two examples
+review_output_tokens_per_name = 16
+claude_code_request_tokens = 1000         # what Claude Code adds to each request (estimate of the tokens of the subscription)
+review_local_seconds_per_line = 0.8       # a local model, to adjust to the machine (measured 17/11/2026, Qwen3.6-35B-A3B)
+review_local_seconds_per_name = 1.2
 [estimation.prices]                       # dollars per million tokens: [input, output]
 "claude-opus-5-5" = [4.0, 20.0]
 "claude-sonnet-5-5" = [2.0, 10.0]
@@ -124,9 +140,10 @@ gpu_sharing = "auto"                       # a translation model on this machine
 [projects]                                 # what a new project starts with (Settings, New projects); each project may change it
 order = "steps"                            # "steps" (every video through one step, then the next) or "videos" (each video to its end)
 dubbing = false                            # the Dubbing step ticked
-review = false                             # AI review of the proper names before translating
+review = ""                                # AI review before translating: "" (none), "names" (the proper names) or "full" (the names, then every subtitle)
+# review_engine = "claude"                 # id of the translator that reviews; absent: a Claude translator if there is one (Claude Code before the paid API), otherwise the project's
 replace = false                            # with the dubbing, the MKV replaces the original video (sent to the recycle bin)
-# pause = true                             # stop before the translation to see its cost; absent: on for a paid translator
+# pause = true                             # stop before a free translation too; a paid model (review, translation) always waits for your go-ahead
 # mkv = false                              # with the dubbing, the dubbed track alone; absent: an MKV with every track
 
 [web]

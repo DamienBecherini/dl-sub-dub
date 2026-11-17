@@ -103,3 +103,66 @@ def test_stdio_one_message_a_line(monkeypatch, api):
     answers = [json.loads(x) for x in raw.getvalue().decode().splitlines()]
     assert [a.get("id") for a in answers] == [1, None, 2]                  # the notification has no answer
     assert answers[1]["error"]["code"] == -32700 and "Léa Parker" in answers[2]["result"]["content"][0]["text"]
+
+
+# --- the review by the assistant -------------------------------------------------------------------------------------
+
+SUBTITLES = {"item": "a", "title": "e8.mp4", "spoken_language": "fr", "language": "fr", "count": 3, "waiting": 1,
+             "lines": [{"line": 1, "start": 0.0, "end": 2.0, "text": "Bonjour à tous."}, {"line": 2, "start": 62.5, "end": 64.0, "text": "Le bois de vingt scènes."},
+                       {"line": 3, "start": 3725.0, "end": 3727.0, "text": "À bientôt."}]}
+
+
+def reviewing(monkeypatch, answers):
+    seen = []
+
+    def fake(method, path, body=None):
+        seen.append((method, path, body))
+        return answers[path.split("?")[0].rsplit("/", 1)[-1]]
+    monkeypatch.setattr(m, "call", fake)
+    return seen
+
+
+def test_the_subtitles_of_a_video_numbered_with_their_times(monkeypatch):
+    seen = reviewing(monkeypatch, {"subtitles": SUBTITLES})
+    err, r = tool("get_subtitles", project_id="p1", video_id="a")
+    assert not err and seen[-1] == ("GET", "/api/projects/p1/items/a/subtitles", None)
+    assert r["subtitles"].splitlines() == ["1 [0:00] Bonjour à tous.", "2 [1:02] Le bois de vingt scènes.", "3 [1:02:05] À bientôt."]
+    assert (r["video"], r["spoken_language"], r["lines_in_all"], r["fixes_waiting_for_the_user"]) == ("e8.mp4", "fr", 3, 1)
+    err, r = tool("get_subtitles", project_id="p1", video_id="a", first=2, last=2)
+    assert r["subtitles"] == "2 [1:02] Le bois de vingt scènes." and (r["first"], r["last"]) == (2, 2)
+    assert tool("get_subtitles", project_id="p1", video_id="a", first="x")[0]
+
+
+def test_a_translation_is_read_with_its_original(monkeypatch):
+    lines = [{**x, "translation": t} for x, t in zip(SUBTITLES["lines"], ["Hello everyone.", "The wood of twenty scenes.", "See you soon."])]
+    seen = reviewing(monkeypatch, {"subtitles": {**SUBTITLES, "language": "en", "lines": lines, "stale": [2]}})
+    err, r = tool("get_subtitles", project_id="p1", video_id="a", language="EN")
+    assert not err and seen[-1][1] == "/api/projects/p1/items/a/subtitles?language=en"
+    assert r["subtitles"].splitlines()[:2] == ["1 [0:00] Hello everyone.", "    original: Bonjour à tous."]
+    assert r["language"] == "en" and "2" in r["note"] and "again" in r["note"]
+
+
+def test_fixes_are_proposed_and_left_to_the_user(monkeypatch):
+    answer = {"proposed": 1, "refused": [{"line": 3, "why": "unchanged"}, {"line": 9, "why": "unknown_line"}], "waiting": 2, "state": "done"}
+    seen = reviewing(monkeypatch, {"corrections": answer})
+    fixes = [{"line": 2, "corrected": "Le bois de Vincennes.", "reason": "parc cité ensuite", "confidence": "high"}, {"line": 3, "corrected": "à bientôt"},
+             {"line": 9, "corrected": "x"}]
+    err, r = tool("propose_corrections", project_id="p1", video_id="a", corrections=fixes)
+    assert not err and seen[-1] == ("POST", "/api/projects/p1/items/a/corrections", {"corrections": fixes, "by": "assistant (MCP)", "complete": True})
+    assert r["proposed"] == 1 and r["waiting_for_the_user"] == 2 and [x["line"] for x in r["refused"]] == [3, 9]
+    assert "punctuation" in r["refused"][0]["why"] and "no such line" in r["refused"][1]["why"]
+    assert "Nothing is applied yet" in r["next"] and "run_video" in r["next"]                # its subtitles are made: to run again
+    reviewing(monkeypatch, {"corrections": {**answer, "state": "paused"}})
+    assert "approve_translation" in tool("propose_corrections", project_id="p1", video_id="a", corrections=fixes, whole_video_read=False)[1]["next"]
+    assert tool("propose_corrections", project_id="p1", video_id="a", corrections="x")[0]
+    tools = {t["name"]: t for t in rpc("tools/list")["result"]["tools"]}
+    assert tools["get_subtitles"]["annotations"]["readOnlyHint"] and not tools["propose_corrections"]["annotations"]["readOnlyHint"]
+    assert "the user accepts" in tools["propose_corrections"]["description"]
+
+
+def test_what_waits_for_the_user(monkeypatch):
+    seen = reviewing(monkeypatch, {"review": {"proposals": [{"transcribed": "Rénal", "spelling": "Renan"}],
+                                              "corrections": [{"item": "a", "title": "e8.mp4", "corrections": [{"id": "c62500", "line": 2}]}]}})
+    err, r = tool("pending_corrections", project_id="p1")
+    assert not err and seen[-1] == ("GET", "/api/projects/p1/review", None)
+    assert r["names"][0]["transcribed"] == "Rénal" and r["lines"] == [{"video_id": "a", "video": "e8.mp4", "fixes": [{"id": "c62500", "line": 2}]}]

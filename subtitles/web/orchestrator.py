@@ -11,7 +11,7 @@ import os
 import time
 from pathlib import Path
 
-from .. import config, dubbing, language, pipeline, review, source, steps
+from .. import config, corrections, dubbing, glossary, i18n, language, pipeline, review, source, steps
 from ..project import STAGES, Event, Item, Project, Stage, StageState, rules, settings, store
 from ..project.choices import (LANGUAGE_KEYS, RECHECK_KEYS, STEP_OF_SETTING, normalized, origin_of, own, stages_for, stop_for,
                                tick_with_needs, until_of)
@@ -200,7 +200,10 @@ class Orchestrator(Scheduler):
             return False
         if LANGUAGE_KEYS & set(changes) and rules.locked([item]):
             return False
-        changes = normalized(changes)
+        own_review = changes.get("review")      # for one video, "none" says no review whatever the project asks
+        changes = normalized({k: v for k, v in changes.items() if k != "review"})
+        if own_review is not None or "review" in changes:
+            changes["review"] = own_review if own_review in ("none", "names", "full") else None
         with run.lock:
             for k, v in changes.items():
                 settings.override(item, k, v)
@@ -259,30 +262,118 @@ class Orchestrator(Scheduler):
                 names = set(json.loads(f.read_text(encoding="utf-8")).get("names", []))
             except (OSError, ValueError):
                 names = set()
-        return {"proposals": review.proposals(run.file, names), "path": path or ""}
+        return {"proposals": review.proposals(run.file, names), "path": path or "", "corrections": self._pending_corrections(run, path)}
 
-    def validate_names(self, ident: str, decisions: list[dict]) -> dict | None:
+    @staticmethod
+    def _work(run: ProjectRun, item: Item) -> Path:
+        return pipeline.work_dir(run.options.get("output_dir") or config.load()["output_dir"], item.video)
+
+    def _pending_corrections(self, run: ProjectRun, path: str | None = None) -> list[dict]:
+        """The lines the full AI review proposes to fix, video by video (those of one video with `path`), in the order
+        of the list: [{item, title, corrections: [{id, line, start, original, corrected, reason, confidence}]}]."""
+        out = []
+        wanted = path.replace("\\", "/") if path else None
+        for item in run.project.items:
+            if not item.video or (wanted and wanted not in (item.video, item.id)):
+                continue
+            waiting = corrections.pending(self._work(run, item))
+            if waiting:
+                out.append({"item": item.id, "title": item.title or Path(item.video).name,
+                            "corrections": [{k: c.get(k) for k in ("id", "line", "start", "original", "corrected", "reason", "confidence")} for c in waiting]})
+        return out
+
+    def subtitles_of(self, ident: str, item_id: str, wanted: str = "") -> dict | None:
+        """The subtitles of a video as they are now, numbered like the AI review numbers them: {transcribed, item, title,
+        spoken_language, language, count, waiting, lines: [{line, start, end, text}]}; with `wanted`, another language
+        than the spoken one, each line also has its `translation` (`translated`: false without one of this
+        segmentation; `stale`: the lines whose original changed since). None: unknown project or video."""
+        run = self.all.get(ident)
+        item = run.project.item(item_id) if run else None
+        if item is None:
+            return None
+        cues = pipeline.kept_cues(config.load(), self._work(run, item), glossary.path_for(run.file)) if item.video else None
+        if cues is None:
+            return {"transcribed": False}
+        work = self._work(run, item)
+        spoken = item.facts.get("detected_language") or item.overrides.get("language") or ""
+        out = {"transcribed": True, "item": item.id, "title": item.title or Path(item.video).name, "spoken_language": spoken,
+               "language": spoken, "count": len(cues), "waiting": len(corrections.pending(work)),
+               "lines": [{"line": i + 1, "start": round(c.start, 2), "end": round(c.end, 2), "text": c.text} for i, c in enumerate(cues)]}
+        wanted = (wanted or "").strip().lower()
+        if wanted and wanted != spoken:
+            translated, changed = pipeline.translation_of(work, wanted, [c.text for c in cues])
+            out.update(language=wanted, translated=translated is not None, stale=[i + 1 for i in changed])
+            for line, text in zip(out["lines"], translated or []):
+                line["translation"] = text
+        return out
+
+    def propose_corrections(self, ident: str, item_id: str, found: list[dict], by: str = "", complete: bool = True) -> dict | None:
+        """Lines to fix proposed from outside (an assistant, through the MCP server) for a video already transcribed:
+        kept under the rules of the AI review, they wait for a decision in the page like those of a model. →
+        {transcribed, busy, proposed, refused: [{line, why}], waiting, state}; None: unknown project or video."""
+        run = self.all.get(ident)
+        item = run.project.item(item_id) if run else None
+        if item is None:
+            return None
+        if not item.video:
+            return {"transcribed": False}
+        if item.state(Stage.SUBTITLES) == S.RUNNING:           # its subtitles are being made: the lines would move under the proposals
+            return {"transcribed": True, "busy": True}
+        work = self._work(run, item)
+        cues = pipeline.kept_cues(config.load(), work, glossary.path_for(run.file))
+        if cues is None:
+            return {"transcribed": False}
+        with run.lock:
+            kept, refused = corrections.propose(work, cues, found, by or "assistant", complete)
+            task = self.queue.get(item.stages[Stage.SUBTITLES].task or "") if item.state(Stage.SUBTITLES) == S.PAUSED else None
+            if task is not None and kept:
+                task.asked_validation = False                  # it waits for a go-ahead: these lines are to decide first
+            observed.observe(run)
+            run.review_stamp += 1
+            run.save()
+        return {"transcribed": True, "busy": False, "proposed": len(kept), "refused": refused, "waiting": len(corrections.pending(work)),
+                "state": item.state(Stage.SUBTITLES).value}
+
+    def validate_names(self, ident: str, decisions: list[dict], lines: list[dict] | None = None) -> dict | None:
+        """The decisions on the proposals of the AI review: `decisions` for the names ({transcribed, spelling, french,
+        accept}, see review.validate), `lines` for the lines of the full review ({item, id, accept, corrected?})."""
         run = self.all.get(ident)
         if not run:
             return None
         accepted, rejected = review.validate(run.file, decisions)
+        fixed, left = 0, 0
+        by_item: dict[str, list[dict]] = {}
+        for x in lines or []:
+            by_item.setdefault(str(x.get("item") or ""), []).append(x)
+        for item_id, chosen in by_item.items():
+            item = run.project.item(item_id)
+            if item is not None and item.video:
+                yes, no = corrections.decide(self._work(run, item), chosen)
+                fixed, left = fixed + yes, left + no
         with run.lock:
             observed.observe(run)
             run.save()
-        return {"accepted": accepted, "rejected": rejected}
+        return {"accepted": accepted, "rejected": rejected, "lines_accepted": fixed, "lines_rejected": left}
 
     def estimate(self, ident: str, languages: list[str] | None = None) -> dict | None:
-        """Sum of the estimates of the prepared videos (transcribed, task paused before the translation)."""
+        """Sum of the estimates of the prepared videos (transcribed, task paused before the translation), with what
+        they wait for (`waits`: how many for the cost of their AI review, for a decision on its proposals, for the cost
+        of their translation) and the estimate of the AI reviews not run yet (`review`, see estimation.review)."""
         run = self.all.get(ident)
         if not run:
             return None
-        total = None
+        total, waits, reviews = None, {"review": 0, "validation": 0, "translation": 0}, None
         for item in run.items():
             task = item.stages[Stage.SUBTITLES].task
             if item.state(Stage.SUBTITLES) != S.PAUSED or not task:
                 continue
             e = self.queue.estimate(task, languages if languages is not None else run.options.get("languages"))
-            if not e or not e["languages"]:              # already translated into these languages: will cost nothing
+            if not e:
+                continue
+            if e.get("waits") in waits:
+                waits[e["waits"]] += 1
+            reviews = self._add_review(reviews, e.get("review"))
+            if not e["languages"]:                       # already translated into these languages: will cost nothing
                 continue
             if total is None:
                 total = {**e, "videos": 0, "translators": [dict(t) for t in e["translators"]]}
@@ -295,7 +386,23 @@ class Orchestrator(Scheduler):
                         if a.get(k) is not None and b.get(k) is not None:
                             a[k] = round(a[k] + b[k], 4)
             total["videos"] += 1
-        return total or {"languages": [], "count": 0}
+        return {**(total or {"languages": [], "count": 0}), "waits": waits, "review": reviews}
+
+    @staticmethod
+    def _add_review(total: dict | None, r: dict | None) -> dict | None:
+        """The estimate of the AI review of one more video added to the sum (a price unknown for one is for all)."""
+        if not r:
+            return total
+        if total is None:
+            return {**r, "videos": 1, "translators": [dict(t) for t in r["translators"]]}
+        total["videos"] += 1
+        for k in ("count", "names"):
+            total[k] += r[k]
+        for a, b in zip(total["translators"], r["translators"]):
+            for k in ("cost_usd", "duration_s", "input_tokens", "output_tokens", "requests"):
+                if k in a:
+                    a[k] = round(a[k] + b[k], 4) if a[k] is not None and b.get(k) is not None else None
+        return total
 
     # --- actions (False: not possible in the current state) ---
     def set_stages(self, ident: str, stages: list[Stage]) -> bool:
@@ -396,7 +503,7 @@ class Orchestrator(Scheduler):
         return True
 
     def resume(self, ident: str, changes: dict | None = None) -> bool:
-        """Starts a suspended project again; `changes` (translator, transcription, languages, pause, stop) apply to the
+        """Starts a suspended project again; `changes` (translator, transcription, languages, pause, spend_agreed, stop) apply to the
         videos not started yet."""
         run = self.all.get(ident)
         if not run or run.state != RunState.SUSPENDED:
@@ -407,8 +514,11 @@ class Orchestrator(Scheduler):
                 run.options[k] = changes[k]
         if changes.get("languages") is not None:
             run.options["languages"] = language.normalize_codes(changes["languages"])
-        if changes.get("pause") is not None:
-            run.options["pause"] = bool(changes["pause"])
+        for k, v in normalized({k: changes[k] for k in ("pause", "spend_agreed") if changes.get(k) is not None}).items():
+            if v is None:
+                run.options.pop(k, None)
+            else:
+                run.options[k] = v
         if changes.get("stop") in steps.STOPS:
             self._set_stop(run, changes["stop"])
         run.state = RunState.RUNNING
@@ -439,10 +549,36 @@ class Orchestrator(Scheduler):
                     and (t.options.get("transcription") or "") != engine:
                 self.queue.cancel(t.id, stopped=True)
 
-    def translate(self, ident: str, translator: str | None, languages: list[str] | None, stop: str | None = None) -> bool:
+    def translate(self, ident: str, translator: str | None, languages: list[str] | None, stop: str | None = None,
+                  review_choice: dict | None = None) -> bool:
+        """The go-ahead for the videos that wait: their AI review if it waited for its cost, then their translation
+        (they stop once more if the review proposes something to decide). `review_choice` {review?, review_engine?}:
+        another kind of review ("" for none) or another model for it, for the project from now on."""
         run = self.all.get(ident)
         if not run or run.state != RunState.AWAITING_TRANSLATION:
             return False
+        chosen = {k: v for k, v in (review_choice or {}).items() if k in ("review", "review_engine", "spend_agreed") and v is not None}
+        for k, v in normalized(chosen).items():
+            if v is None:
+                run.options.pop(k, None)
+            else:
+                run.options[k] = v
+        run.held.clear()
+        if run.by_video:                       # video by video: the video that waits goes on, the next ones after it
+            run.state = RunState.RUNNING
+            with run.lock:
+                for item in run.items():
+                    task = item.stages[Stage.SUBTITLES].task
+                    if item.state(Stage.SUBTITLES) != S.PAUSED or not task:
+                        continue
+                    t = self.queue.resume(task, own(run.options, item, "translator"), self._languages(run, item), self._review_choice(run, item))
+                    if t is None:
+                        item.apply(Stage.SUBTITLES, E.FAIL, error=i18n.t("err.paused_task_missing"))
+                    else:
+                        item.apply(Stage.SUBTITLES, E.START, task=t.id)
+                run.save()
+            self.queue.wake.set()
+            return True
         if translator is not None:
             run.options["translator"] = translator
         if languages is not None:
@@ -503,11 +639,11 @@ class Orchestrator(Scheduler):
             sub = item.stages[Stage.SUBTITLES]
             t = self.queue.get(sub.task or "")
             if sub.state == S.PAUSED and t and t.state == TaskState.PAUSED:
-                t.options.update(until=until_of(item, until), pause=False)
+                t.options.update(until=until_of(item, until))
                 t.continued = True
-                self.queue.resume(t.id, own(run.options, item, "translator"), self._languages(run, item))
+                self.queue.resume(t.id, own(run.options, item, "translator"), self._languages(run, item), self._review_choice(run, item))
             else:
-                t = self._add_task(run, item, until=until, pause=False, continued=True, check_names=True)
+                t = self._add_task(run, item, until=until, pause=run.options.get("pause"), continued=True, check_names=True)
             stage = Stage.SUBTITLES if sub.state != S.DONE else Stage.DUBBING
             item.apply(stage, E.START, task=t.id)
             if stage == Stage.SUBTITLES and wants_dubbing:

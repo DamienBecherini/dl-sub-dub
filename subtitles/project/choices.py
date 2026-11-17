@@ -5,7 +5,7 @@ Plain functions over the model, without the disk nor the service: the orchestrat
 """
 from typing import Callable
 
-from .. import language, steps
+from .. import language, review, steps
 from .model import Item, Stage, StageState
 
 S = StageState
@@ -69,9 +69,15 @@ def normalized(changes: dict) -> dict:
     if "dub_language" in changes:              # one code or several: a list; nothing: the default
         codes = language.normalize_codes(steps.dub_codes(changes["dub_language"]))
         changes = {**changes, "dub_language": codes or None}
-    for key in ("mkv", "replace"):
+    if "pause" in changes:                     # only "also before a free translation"; "never", of older versions, is gone
+        changes = {**changes, "pause": True if changes["pause"] is True else None}
+    for key in ("mkv", "replace", "spend_agreed"):
         if changes.get(key) is not None:
             changes = {**changes, key: bool(changes[key])}
+    if changes.get("review") is not None:     # which AI review: none, the names, every subtitle (True: the names)
+        changes = {**changes, "review": review.mode(changes["review"])}
+    if changes.get("review_engine") is not None:
+        changes = {**changes, "review_engine": str(changes["review_engine"]) or None}      # "": the default one
     if "order" in changes:
         changes = {**changes, "order": "videos" if changes["order"] == "videos" else None}      # None: step by step
     return changes

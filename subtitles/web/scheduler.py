@@ -8,7 +8,7 @@ item (`Item.apply`) and the project file. The orchestrator (orchestrator.py) bui
 import threading
 from pathlib import Path
 
-from .. import config, dubbing, glossary, i18n, steps, translation
+from .. import config, dubbing, glossary, i18n, review, steps, translation
 from ..project import STAGES, Event, Item, Stage, StageState, rules
 from ..project.choices import languages_of, own, until_of
 from ..states import ACTIVE_TASK_STATES, RunState, TaskState
@@ -70,9 +70,10 @@ class Scheduler:
             o = run.options
             sub = item.stages[Stage.SUBTITLES]
             if sub.state == S.TODO:
-                # phase 1 pauses before the translation if the project says so; not set: the translator's default
-                # (on for a paid API, see estimation.pause_by_default)
-                t = self._add_task(run, item, pause=o.get("pause") if run.phase == 1 and not run.by_video else False)
+                # Whatever the phase and the order of the work, its task stops before a paid model (the AI review,
+                # the translation; see TaskQueue._pauses_after_preparation) and waits for the proposals of the review
+                # to be decided.
+                t = self._add_task(run, item, pause=o.get("pause"), check_names=True)
                 item.apply(Stage.SUBTITLES, E.START, task=t.id)
             elif sub.state == S.DONE:          # phase 3 (or video by video, right after its subtitles): the dubbing
                 if not card.ready(run, wait=True):
@@ -80,7 +81,7 @@ class Scheduler:
                 t = self._add_task(run, item, pause=False, until=o.get("stop"), review=False)
                 item.apply(Stage.DUBBING, E.START, task=t.id)
             else:                              # phase 2: the translation of a paused task
-                t = self.queue.resume(sub.task, own(o, item, "translator"), self._languages(run, item))
+                t = self.queue.resume(sub.task, own(o, item, "translator"), self._languages(run, item), self._review_choice(run, item))
                 if t is None:
                     item.apply(Stage.SUBTITLES, E.FAIL, error=i18n.t("err.paused_task_missing"))
                     continue
@@ -102,10 +103,19 @@ class Scheduler:
                                "destination": o.get("destination"),
                                "redo": bool(o.get("redo")) and item.state(Stage.SUBTITLES) == S.TODO, "project": run.id,
                                "video_duration": item.facts.get("duration") or 0, "glossary": str(glossary.path_for(run.file)), "project_file": str(run.file),
-                               "review": bool(o.get("review")), "pause": False,
+                               **self._review_choice(run, item), "pause": False,
                                "dub_language": item.overrides.get("dub_language") or o.get("dub_language") or "",
                                "replace": bool(item.overrides["replace"] if item.overrides.get("replace") is not None else o.get("replace")),
                                **options, **({"until": until_of(item, options["until"])} if "until" in options else {})}, continued)
+
+    @staticmethod
+    def _review_choice(run: ProjectRun, item: Item | None = None) -> dict:
+        """The AI review of a video for its task: which one ("", "names", "full": its own choice, "none" included,
+        otherwise the project's), the model chosen for it ("": see review.engine), and whether the user said not to be
+        asked before a paid model any more in this project."""
+        o = run.options
+        return {"review": review.mode(own(o, item, "review") if item is not None else o.get("review")),
+                "review_engine": o.get("review_engine") or "", "spend_agreed": bool(o.get("spend_agreed"))}
 
     @staticmethod
     def _languages(run: ProjectRun, item: Item) -> list[str] | None:
@@ -155,7 +165,7 @@ class Scheduler:
                 return True
             task = self.queue.get(status.task or "")
             if stage == Stage.SUBTITLES and status.state == S.PAUSED and task and task.state == TaskState.PAUSED:
-                self.queue.resume(task.id, own(o, item, "translator"), self._languages(run, item))      # Translate
+                self.queue.resume(task.id, own(o, item, "translator"), self._languages(run, item), self._review_choice(run, item))      # Translate
             elif stage == Stage.SUBTITLES:
                 task = self._add_task(run, item, pause=o.get("pause"), check_names=True, continued=True)
             else:
@@ -287,6 +297,8 @@ class Scheduler:
             stage = Stage.DUBBING if dubbing_pass else Stage.SUBTITLES
             if t.state == TaskState.PAUSED:
                 item.apply(Stage.SUBTITLES, E.WAIT)
+                if run.phase == 2 and not run.by_video:      # paused again after its go-ahead (the proposals of its review): until the next one
+                    run.held.add(item.id)
             elif t.state == TaskState.DONE:
                 self._finished(item, Stage.SUBTITLES)
                 if steps.goes_to(t.options.get("until"), "dubbing") and (t.result or {}).get("not_dubbed"):

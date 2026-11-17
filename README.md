@@ -49,7 +49,7 @@ flowchart TB
   end
   subgraph s3["3. Subtitles"]
     direction LR
-    tr["Transcription<br/>(your server)"] --> rev["AI review<br/>of the names<br/>(optional)"] --> val["Validation<br/>by you"] --> tl["Translation<br/>(cost shown first,<br/>when it is paid)"]
+    tr["Transcription<br/>(your server)"] --> rev["AI review<br/>(optional)"] --> val["Validation<br/>by you"] --> tl["Translation<br/>(cost shown first,<br/>when it is paid)"]
   end
   subgraph s4["4. Dubbing (optional)"]
     direction LR
@@ -73,8 +73,8 @@ Each video can also run its steps on its own, and have its own settings (languag
 | The project: a video of the web (what its site offers) and two files already subtitled | Settings by categories: here, what a new project starts with |
 |---|---|
 | [![The page](docs/images/en/workshop-dark.png)](docs/images/en/workshop-dark.png) | [![Settings page](docs/images/en/settings-light.png)](docs/images/en/settings-light.png) |
-| **The result, here in French** | **The same project on a phone** |
-| [![Video with French subtitles](docs/images/en/result-fr.png)](docs/images/en/result-fr.png) | [<img src="docs/images/en/workshop-phone-dark.png" alt="The page on a phone: each video as a card" width="300">](docs/images/en/workshop-phone-dark.png) |
+| **Claude Code found on the computer: proposed as a translator, on your subscription** | **The same project on a phone** |
+| [![The Settings propose Claude Code](docs/images/en/settings-claude-code-dark.png)](docs/images/en/settings-claude-code-dark.png) | [<img src="docs/images/en/workshop-phone-dark.png" alt="The page on a phone: each video as a card" width="300">](docs/images/en/workshop-phone-dark.png) |
 
 The demo videos are made on the spot (Windows speech synthesis over [Unsplash photos](docs/demo/backgrounds/CREDITS.md), `docs/demo/videos_demo.py`): an English narration,
 transcribed by [transcription-handy-like](https://github.com/DamienBecherini/transcription-handy-like) and translated
@@ -188,6 +188,7 @@ In **Settings › Translation**, add a translator:
 | Local model with llama.cpp | `openai` | `http://127.0.0.1:8080` | The base address, without `/v1`. |
 | Local model with Ollama | `openai` | `http://127.0.0.1:11434` | The model is unloaded before a dubbing. |
 | Claude API | `claude` | (none) | First run `.venv/bin/pip install ".[claude]"`. Paid: the project stops after the transcription to show the cost. |
+| Claude Code, on your Claude subscription | `claude_code` | (none) | Claude Code installed on this machine and signed in with a Claude plan: no API key, nothing billed, the usage counts in the limits of the plan. The Settings propose it when it is found. See [the reference](docs/reference.md#ai-review-optional). |
 | Another OpenAI-compatible API (OpenAI, Mistral, Groq…) | `openai` | The provider's | Paid, same pause before the translation. |
 
 [AGENTS.md](AGENTS.md) has a table to choose a local model from the graphics card and the memory.
@@ -291,30 +292,39 @@ translation waiting), `new_project` (addresses, files, folders, `.txt` lists; no
 `approve_translation`, `pause_project`. A paid translation still stops to show its cost: the assistant is told to ask
 you before `approve_translation`. **Only for videos, and voices, you have the right to use.**
 
+The assistant can also review a video itself (*"read episode 3 again and fix what was heard wrong"*, *"does the English
+translation hold up?"*): `get_subtitles` gives it the subtitles of a video, numbered, in the spoken language or a
+translation with the original under each line; `propose_corrections` sends the lines to fix, which arrive on the page
+like those of the AI review and wait for your decision there (nothing is applied without it); `pending_corrections`
+says what still waits. Once you have decided, the Subtitles step of the video, run again, applies the fixes and
+translates the changed lines again. It reviews the transcription, in its language: it reads a translation but does not
+fix its lines.
+
 ### The API
 
 The web page uses a local JSON API on `http://127.0.0.1:4420`, which scripts can use too. It has no authentication: it only listens on the local machine, and refuses the requests sent by other websites open in the browser (`Origin`, `Host` and `Sec-Fetch-Site` headers checked, see [Security](SECURITY.md); `curl` and scripts are accepted). Error messages follow the `X-Language` header (`en`, `fr`). Each route is a function marked `@route` in `subtitles/web/server.py`, with its body fields in its docstring.
 
 | Request | Purpose |
 | --- | --- |
-| `POST /api/tasks` `{source, languages?, translator?, transcription?, output_dir?, pause?}` | one video (file or address) → task |
+| `POST /api/tasks` `{source, languages?, translator?, transcription?, output_dir?, pause?, spend_agreed?}` | one video (file or address) → task; a paid translator waits for `…/translate` unless `spend_agreed` is true |
 | `GET /api/tasks/<id>?since=N` | state, current step, log lines from N |
 | `POST /api/tasks/<id>/translate` `{translator?, languages?}` | continue a task paused before translation |
 | `POST /api/folder` `{path}` then `GET /api/folder/<id>?videos=1` | list the videos of a folder |
 | `POST /api/youtube` `{url}` | title and duration of a video address, or the playlist it designates, without downloading |
 | `POST /api/playlist` `{url}` then `GET /api/playlist/<id>` | download a whole playlist into a folder, then open it with `/api/folder` |
 | `POST /api/sources` `{entries}` | what Select adds: the videos of addresses, playlists, files, folders and lists, without downloading |
-| `POST /api/projects` `{items: [{source, language?}], stages?, title?, settings?: {languages?, translator?, pause?…}, location?: {base, named}, start?}` | a project: its videos (files or addresses), its steps, its settings; `start` runs it at once |
+| `POST /api/projects` `{items: [{source, language?}], stages?, title?, settings?: {languages?, translator?, review?, spend_agreed?…}, location?: {base, named}, start?}` | a project: its videos (files or addresses), its steps, its settings; `start` runs it at once |
 | `GET /api/projects`, `GET /api/projects/<id>`, `GET /api/projects/<id>/events` | the open projects; the summary of one (`state`, `phase`, `step` of the running video, counts, time left, each video with its steps and what can be done with it), or the same pushed at each change (Server-Sent Events) |
 | `POST /api/projects/load` `{file}` then `POST /api/projects/<id>/resume` | resume from a `dl-sub-dub.project.json` (or an older `subtitles.batch.json`) |
-| `POST /api/projects/<id>/suspend`, `stop`, `cancel`, `translate` | control a project (`suspend`: after the running video; `stop`: now, the video goes back to the list) |
+| `POST /api/projects/<id>/suspend`, `stop`, `cancel`, `translate` | control a project (`suspend`: after the running video; `stop`: now, the video goes back to the list; `translate` `{translator?, languages?, review?, review_engine?}`: the go-ahead for the AI review and the translation that wait) |
+| `GET /api/projects/<id>/estimate`, `GET /api/projects/<id>/review`, `POST /api/projects/<id>/validate` `{decisions?, lines?}` | what the videos that wait would cost (AI review, translation); what the AI review proposes (names, lines of each video); your decisions |
 | `POST /api/projects/<id>/location` `{title?, base?, named?}` | rename the project; move it while nothing has started |
 | `POST /api/projects/<id>/start` `{stages?, only?}` (without `stages`: the steps ticked), `/select`, `/settings`, `/items/<item>/run` `{stage}` (or `{stages}`: one after the other), `/items/<item>/cancel` | run steps, tick, settings, one video one step (or several in a row) |
 | `GET /api/projects/<id>/items/<item>/log` | the log of the download of a video |
 | `GET /api/health` | busy or not, activity, time left ([reference](docs/reference.md#the-service)) |
 
 ```
-curl -s -X POST localhost:4420/api/projects -H "Content-Type: application/json"   -d '{"items": [{"source": "D:/Series/S1/e01.mkv"}], "settings": {"languages": ["fr"], "pause": false}, "start": true}'
+curl -s -X POST localhost:4420/api/projects -H "Content-Type: application/json"   -d '{"items": [{"source": "D:/Series/S1/e01.mkv"}], "settings": {"languages": ["fr"], "spend_agreed": true}, "start": true}'
 curl -s localhost:4420/api/projects/<id>
 ```
 
@@ -324,7 +334,7 @@ curl -s localhost:4420/api/projects/<id>
 - **Nothing is done twice.** A step whose result is on the disk is skipped. A project resumes after an interruption, a stopped download resumes where it was, a stopped dubbing keeps the sentences it already made, and changing a language or the layout does not transcribe again.
 - **Two orders of work.** Step by step (every video through one step, then the next: the cost of every translation before any is paid) or video by video (a first video finished sooner).
 - **Your edits are kept.** A `.srt` edited by hand is not overwritten; the dubbing and the MKV use your version.
-- **Proper names.** The transcription often distorts them. The optional AI review (Claude) finds them, and nothing is changed without your validation.
+- **Proper names and words heard wrong.** The transcription often distorts rare names and words, and sometimes makes a sentence up during a silence. The optional AI review (the names only, or every subtitle; by Claude, a local model or any OpenAI-compatible API) proposes fixes, and nothing is changed without your validation. A small local model misses more of them than a large one.
 - **Short lines of a dialogue.** A sentence too short to clone a voice well is completed only with nearby lines of the same person, told apart by a speaker-recognition model (WavLM, 380 MB, downloaded on the first dubbing): a man does not take the voice of the woman who answers him.
 - **The original is respected.** The MKV is made next to the video, without re-encoding. An option puts it in its place; the original then goes to the recycle bin.
 - **A downloaded file keeps its address.** Added later to another project, it still offers the audio tracks and the subtitles of its site (Download tab of its line), and pasting its address into that project does not download it a second time.

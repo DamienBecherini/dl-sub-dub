@@ -27,6 +27,9 @@ class FakeTranslator:
         self.requests.append(request)
         return json.dumps({"entries": self.answers.pop(0)})
 
+    def prepare(self):
+        pass
+
     def finish(self):
         self.finished = True
 
@@ -178,7 +181,7 @@ def test_continue_resumes_the_paused_task_to_the_end(monkeypatch, tmp_path):
     g.queue.order.append(t.id)
     update(run, 0, task=t.id)
     assert g.projects.continue_video("L", "v0.mp4")
-    assert t.state == "queued" and t.options["until"] == "mux" and t.options["pause"] is False
+    assert t.state == "queued" and t.options["until"] == "mux" and t.agreed      # Continue on a video that waits: the go-ahead
     assert [v["state"] for v in run.videos] == ["running", "prepared"]
     assert run.state == "awaiting_translation"
     assert not g.projects.continue_video("L", "v0.mp4")   # already running
@@ -259,7 +262,7 @@ def test_reloaded_project_keeps_the_names_to_validate(monkeypatch, tmp_path):
     observed.observe(run)
     assert run.videos[0]["reviewed"] and not run.videos[0]["validated"]
     assert [p["transcribed"] for p in g.projects.proposals("L", "v0.mp4")["proposals"]] == ["Gary Iev"]
-    assert g.projects.validate_names("L", [{"transcribed": "Gary Iev", "spelling": "Gariaev", "french": "", "accept": True}]) == {"accepted": 1, "rejected": 0}
+    assert g.projects.validate_names("L", [{"transcribed": "Gary Iev", "spelling": "Gariaev", "french": "", "accept": True}]) == {"accepted": 1, "rejected": 0, "lines_accepted": 0, "lines_rejected": 0}
     assert run.videos[0]["validated"]
 
 

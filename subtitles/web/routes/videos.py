@@ -25,7 +25,8 @@ def list_tasks(req):
 
 @route("POST", "/api/tasks")
 def create_task(req):
-    """{source, transcription?, translator?, language?, languages?, output_dir?, destination?, redo?, pause?, until?, replace?}"""
+    """{source, transcription?, translator?, language?, languages?, output_dir?, destination?, redo?, pause?, spend_agreed?, until?, replace?}; a paid translator waits for a go-ahead
+    unless `spend_agreed` is true; `pause` true: a free one waits too."""
     d = req.json()
     src = (d.get("source") or "").strip().strip('"')
     if not src:
@@ -38,8 +39,10 @@ def create_task(req):
         options["languages"] = language.normalize_codes(d["languages"])
     if isinstance(d.get("destination"), dict):
         options["destination"] = {k: bool(d["destination"].get(k)) for k in ("next_to_video", "output_dir")}
-    if d.get("pause") is not None:
-        options["pause"] = bool(d["pause"])
+    if d.get("pause") is True:
+        options["pause"] = True
+    if d.get("spend_agreed") is True:
+        options["spend_agreed"] = True
     to_the_end = d.get("until") == "mux"
     if to_the_end:
         options.update(until="mux", replace=bool(d.get("replace")))

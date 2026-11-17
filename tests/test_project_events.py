@@ -49,7 +49,7 @@ def test_the_project_is_pushed_when_it_changes(base, tmp_path):
         first = read_event(stream)
         assert first["id"] == run.id and first["title"] == "Mine"
         service.manager.projects.set_project_settings(run.id, {"review": True})
-        assert read_event(stream)["options"]["review"] is True
+        assert read_event(stream)["options"]["review"] == "names"      # True, as the versions before wrote it: the names
 
 
 def test_nothing_is_built_while_the_project_does_not_change(base, tmp_path):

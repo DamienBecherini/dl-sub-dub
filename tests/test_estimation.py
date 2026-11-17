@@ -65,6 +65,7 @@ def test_pause_by_default():
     assert not estimation.pause_by_default({"type": "openai", "url": "http://127.0.0.1:8080"})
     assert not estimation.pause_by_default({"type": "none"})
     assert estimation.pause_by_default({"type": "claude"})
+    assert not estimation.pause_by_default({"type": "claude_code"})          # on the subscription of the user: nothing billed
     assert estimation.pause_by_default({"type": "openai", "url": "https://api.openai.com"})
 
 

@@ -1,5 +1,5 @@
 """The order of the work: step by step (every video subtitled, then every video dubbed) or video by video (each video
-dubbed right after its subtitles, then the next one; no pause before the translation)."""
+dubbed right after its subtitles, then the next one; a video that waits for the user holds the next ones)."""
 import pytest
 
 from helpers import at
@@ -52,7 +52,7 @@ def test_video_by_video_dubs_each_one_before_the_next(g, tmp_path):
     assert run.summary()["order"] == "videos"
     g.projects.feed()
     assert (one.state(Stage.SUBTITLES), two.state(Stage.SUBTITLES)) == (S.RUNNING, S.TODO)
-    assert g.queue.get(one.stages[Stage.SUBTITLES].task).options["pause"] is False     # no pause before the translation
+    assert g.queue.get(one.stages[Stage.SUBTITLES].task).options["pause"] is True      # a paid model asks first here too
     subtitled(g, one)
     g.projects.feed()
     assert one.state(Stage.DUBBING) == S.RUNNING and two.state(Stage.SUBTITLES) == S.TODO
@@ -60,6 +60,25 @@ def test_video_by_video_dubs_each_one_before_the_next(g, tmp_path):
     at(one, Stage.DUBBING, S.DONE)
     g.projects.feed()
     assert two.state(Stage.SUBTITLES) == S.RUNNING
+
+
+def test_video_by_video_a_video_that_waits_holds_the_next_ones(g, tmp_path):
+    run = project(g, tmp_path, "videos")
+    one, two = run.project.items
+    g.projects.feed()
+    t = g.queue.get(one.stages[Stage.SUBTITLES].task)
+    t.state, t.waits = TaskState.PAUSED, "translation"          # its translation costs: it waits for the go-ahead
+    g.projects.task_changed(t)
+    g.projects.feed()
+    assert run.state == "awaiting_translation" and two.state(Stage.SUBTITLES) == S.TODO and run.phase == 1
+    assert g.projects.translate(run.id, None, None, None, {"spend_agreed": True})
+    assert (run.state, run.phase, t.state, one.state(Stage.SUBTITLES)) == ("running", 1, TaskState.QUEUED, S.RUNNING)
+    assert t.options["spend_agreed"] is True and run.options["spend_agreed"] is True       # not asked again in this project
+    g.projects.feed()
+    assert two.state(Stage.SUBTITLES) == S.TODO                 # one video at a time: the first one goes to its end
+    subtitled(g, one)
+    g.projects.feed()
+    assert one.state(Stage.DUBBING) == S.RUNNING
 
 
 def test_step_by_step_subtitles_every_video_first(g, tmp_path):

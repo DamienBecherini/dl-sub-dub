@@ -1,4 +1,6 @@
 """AI review of a transcription: spots the distorted proper names and proposes their fix, without changing anything.
+(The review of every subtitle of a video, line by line, is in corrections.py; `mode` says which is asked for and
+`engine` which model reviews.)
 
 File `subtitles.review.json`, next to the project file: {"examined": [names already submitted], "proposals": [...]}.
 A name is submitted only once per project, even if it appears in 200 videos. In the working folder of each video,
@@ -17,6 +19,7 @@ from . import glossary, i18n, translation
 FILE_NAME = "subtitles.review.json"
 VIDEO_FILE = "review.json"
 PACKET_SIZE = 70
+STATUSES = ("to_fix", "uncertain", "french_form")
 _lock = threading.RLock()
 
 _WORD = r"[A-ZÀ-Ý][a-zà-ÿ]+(?:[-'’][A-Za-zà-ÿ]+)*"
@@ -47,10 +50,34 @@ def path_for(project_file: str | Path) -> Path:
     return Path(project_file).with_name(FILE_NAME)
 
 
-def engine(cfg: dict, translator_id: str | None = None) -> dict | None:
-    """The Claude translator chosen for the project, else the first configured one; None if there is none (no review)."""
-    claudes = [m for m in cfg.get("translators", []) if m.get("type") == "claude"]
-    return next((m for m in claudes if m.get("id") == translator_id), claudes[0] if claudes else None)
+MODES = ("", "names", "full")
+
+
+CLAUDES = ("claude_code", "claude")              # the translators that are Claude, the free one first
+
+
+def mode(value) -> str:
+    """The review asked for: "" (none), "names" (the proper names, for the whole project) or "full" (the names, then
+    every subtitle of each video, see corrections.py). `True`, written by the versions that only knew the names: "names"."""
+    if value is True:
+        return "names"
+    return value if value in MODES else ""
+
+
+def engine(cfg: dict, translator_id: str | None = None, chosen: str | None = None) -> dict | None:
+    """The model that reviews, one of the translators of the settings: the one `chosen` for the review (project, or
+    `[projects] review_engine`); otherwise a Claude translator (the project's; else Claude Code, on the subscription,
+    before the Claude API, which is paid; in the order of the settings), otherwise the translator of the project. None
+    if there is none that can read (no review)."""
+    able = [m for m in cfg.get("translators", []) if m.get("type", "openai") in CLAUDES + ("openai",)]
+    by_id = {m.get("id"): m for m in able}
+    if chosen and chosen in by_id:
+        return by_id[chosen]
+    claudes = sorted((m for m in able if m.get("type") in CLAUDES), key=lambda m: CLAUDES.index(m.get("type")))
+    own = by_id.get(translator_id or cfg.get("active_translator"))
+    if own is not None and own.get("type") in CLAUDES:
+        return own
+    return claudes[0] if claudes else own
 
 
 def _read(f: Path) -> dict:
@@ -100,40 +127,49 @@ def candidates(text: str) -> list[dict]:
 
 def _submit(translator, title: str, packet: list[dict]) -> list[dict]:
     lines = [f"{i}. {c['name']} ({c['occurrences']} fois) : " + " / ".join(c["examples"]) for i, c in enumerate(packet)]
-    raw = translator.complete(INSTRUCTIONS, f"Titre : {title}\n\n" + "\n".join(lines), schema=SCHEMA, effort="medium")
+    raw = translator.complete(INSTRUCTIONS, f"Titre : {title}\n\n" + "\n".join(lines), schema=SCHEMA,
+                              effort=getattr(translator, "review_effort", None) or "medium")
     r = []
-    for e in json.loads(raw)["entries"]:
-        if 0 <= e["index"] < len(packet):
-            c = packet[e["index"]]
-            spelling = c["name"] if e["status"] == "french_form" else e["spelling"]    # the name is right: do not rewrite it (cut title, etc.)
-            r.append({"transcribed": c["name"], "status": e["status"], "spelling": spelling, "french": e["french"], "confidence": e["confidence"],
-                      "reason": e["reason"], "occurrences": c["occurrences"], "examples": c["examples"]})
+    for e in translation.parse_json(raw).get("entries") or []:       # a local model may leave a field out: read with care
+        if not isinstance(e, dict) or not isinstance(e.get("index"), int) or e.get("status") not in STATUSES or not 0 <= e["index"] < len(packet):
+            continue
+        c = packet[e["index"]]
+        spelling = c["name"] if e["status"] == "french_form" else str(e.get("spelling") or "")    # the name is right: do not rewrite it (cut title, etc.)
+        r.append({"transcribed": c["name"], "status": e["status"], "spelling": spelling, "french": str(e.get("french") or ""),
+                  "confidence": e.get("confidence") or "medium", "reason": str(e.get("reason") or ""),
+                  "occurrences": c["occurrences"], "examples": c["examples"]})
     return r
 
 
-def review(m: dict, project_file: str | Path, work: Path, title: str, texts: list[str], log=print, cancelled=lambda: False, create=translation.create) -> list[str]:
+def to_submit(project_file: str | Path, texts: list[str]) -> list[dict]:
+    """The names of these subtitles never submitted in this project (see `candidates`): what a review would send."""
+    with _lock:
+        d = _read(path_for(project_file))
+    entries = glossary.load(glossary.path_for(project_file))
+    known = set(d["examined"]) | {p["transcribed"] for p in d["proposals"]} | {e["transcribed"] for e in entries} | {e.get("spelling") for e in entries} | {e.get("french") for e in entries}
+    return [c for c in candidates(" ".join(texts)) if c["name"] not in known]
+
+
+def review(m: dict, project_file: str | Path, work: Path, title: str, texts: list[str], log=print, cancelled=lambda: False, create=None) -> list[str]:
     """Writes the proposals of this video; returns its names waiting for a decision. An API failure leaves the review to redo."""
     f = path_for(project_file)
     every = candidates(" ".join(texts))
-    with _lock:
-        d = _read(f)
-    entries = glossary.load(glossary.path_for(project_file))
-    known = set(d["examined"]) | {p["transcribed"] for p in d["proposals"]} | {e["transcribed"] for e in entries} | {e.get("spelling") for e in entries} | {e.get("french") for e in entries}
-    to_submit = [c for c in every if c["name"] not in known]
-    log(i18n.t("log.review_names", n=len(every), new=len(to_submit)))
-    if to_submit:
-        translator = create(m, log)
+    new_names = to_submit(project_file, texts)
+    log(i18n.t("log.review_names", n=len(every), new=len(new_names)))
+    if new_names:
+        translator = (create or translation.create)(m, log)
         new = []
         try:
-            for i in range(0, len(to_submit), PACKET_SIZE):
+            translator.prepare()               # a local model is started if needed, a key is read
+            for i in range(0, len(new_names), PACKET_SIZE):
                 if cancelled():
                     raise translation.TranslationError(i18n.t("err.cancelled"))
-                new += _submit(translator, title, to_submit[i:i + PACKET_SIZE])
+                new += _submit(translator, title, new_names[i:i + PACKET_SIZE])
         finally:
             translator.finish()
         with _lock:                            # read again: a validation may have arrived during the call
             d = _read(f)
-            d["examined"] = sorted(set(d["examined"]) | {c["name"] for c in to_submit})
+            d["examined"] = sorted(set(d["examined"]) | {c["name"] for c in new_names})
             already = {p["transcribed"] for p in d["proposals"]}
             d["proposals"] += [p for p in new if p["transcribed"] not in already]
             _write(f, d)

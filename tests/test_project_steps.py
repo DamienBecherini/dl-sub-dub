@@ -176,14 +176,15 @@ def test_the_settings_of_the_subtitles_as_they_will_apply(g, tmp_path, monkeypat
     monkeypatch.setattr(config, "load", lambda: cfg)
     run = g.projects.create(tmp_path.as_posix(), [{"source": video(tmp_path, "f.mp4")}], {}, "P", [Stage.SUBTITLES], start=False)
     s = run.subtitle_settings()
-    assert (s["transcription"], s["translator"], s["languages"], s["pause"], s["pause_chosen"]) == ("home", "none", ["fr"], False, False)
+    assert (s["transcription"], s["translator"], s["languages"], s["pause"]) == ("home", "none", ["fr"], False)
     assert g.projects.set_project_settings(run.id, {"translator": "claude", "languages": ["FR", " en "]})
     s = run.subtitle_settings()
-    assert s["translator_paid"] and s["pause"] and run.options["languages"] == ["fr", "en"]      # paid: pause by default
+    assert s["translator_paid"] and not s["pause"] and run.options["languages"] == ["fr", "en"]      # paid: it asks anyway
     g.projects.set_project_settings(run.id, {"translator": "local"})
-    assert not run.subtitle_settings()["pause"]                                                    # local model: free
-    g.projects.set_project_settings(run.id, {"pause": True})
-    assert run.subtitle_settings()["pause"] and run.subtitle_settings()["pause_chosen"]
+    g.projects.set_project_settings(run.id, {"pause": True})                                       # a free translation waits too
+    assert run.subtitle_settings()["pause"]
+    g.projects.set_project_settings(run.id, {"pause": False})                                      # "never" is gone: not set
+    assert not run.subtitle_settings()["pause"] and "pause" not in run.options
     assert run.summary()["subtitles"]["translator"] == "local"
     f = run.project.items[0]
     assert g.projects.set_item_settings(run.id, f.id, {"languages": ["DE"], "language": "en"}) and f.overrides == {"languages": ["de"], "language": "en"}

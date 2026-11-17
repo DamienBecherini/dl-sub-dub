@@ -1,5 +1,6 @@
 """An MCP server (Model Context Protocol) over the local API: an AI assistant without a terminal (Claude Desktop, a voice
-assistant…) makes projects, runs their steps and follows them, as the page does.
+assistant…) makes projects, runs their steps and follows them, as the page does. It can also review a video: read its
+subtitles and propose the lines to fix, which the user decides on the page.
 
     python -m subtitles.mcp_server            # stdio; the web service must run (python -m subtitles.web)
 
@@ -11,6 +12,7 @@ import json
 import os
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 
 from . import __version__, config
@@ -75,7 +77,8 @@ def project_brief(p: dict, videos: bool = True) -> dict:
     if p.get("remaining_s"):
         out["remaining_s"] = p["remaining_s"]
     if p.get("state") == "awaiting_translation":
-        out["note"] = "The translation waits for the user's go-ahead (it may cost): see the estimate, then approve_translation."
+        out["note"] = ("The project waits for the user's go-ahead: an AI review or a translation that may cost (see the estimate, then "
+                       "approve_translation), or fixes proposed by the AI review, to decide on the page first.")
     if videos:
         out["videos"] = [video_brief(i) for i in p.get("items") or []]
     return out
@@ -177,6 +180,64 @@ def t_pause_project(a):
     return project_brief(call("POST", f"/api/projects/{a['project_id']}/{action}", {}))
 
 
+# --- the review by the assistant: the subtitles read, the lines to fix proposed (decided by the user on the page) ---
+WHY_REFUSED = {"no_line": "no line number", "unknown_line": "no such line in this video", "twice": "proposed twice in this call",
+               "unchanged": "nothing changed but punctuation, capitals or hyphens", "too_long": "much longer than the line (lines merged?)",
+               "decided": "the user already decided on this line"}
+
+
+def clock(seconds) -> str:
+    s = int(seconds or 0)
+    return f"{s // 3600}:{s % 3600 // 60:02d}:{s % 60:02d}" if s >= 3600 else f"{s // 60}:{s % 60:02d}"
+
+
+def _video_path(a: dict, what: str) -> str:
+    return f"/api/projects/{urllib.parse.quote(str(a['project_id']))}/items/{urllib.parse.quote(str(a['video_id']))}/{what}"
+
+
+def t_get_subtitles(a):
+    wanted = str(a.get("language") or "").strip().lower()
+    r = call("GET", _video_path(a, "subtitles") + (f"?language={urllib.parse.quote(wanted)}" if wanted else ""))
+    lines = r.get("lines") or []
+    try:
+        first, last = max(1, int(a.get("first") or 1)), min(len(lines), int(a.get("last") or len(lines)))
+    except (TypeError, ValueError):
+        raise ToolError("first and last are line numbers.") from None
+    text = "\n".join(f"{x['line']} [{clock(x['start'])}] {x.get('translation', x['text'])}"
+                     + (f"\n    original: {x['text']}" if "translation" in x else "") for x in lines[first - 1:last])
+    out = {"video": r.get("title"), "spoken_language": r.get("spoken_language"), "language": r.get("language"), "lines_in_all": r.get("count"),
+           "first": first, "last": last, "fixes_waiting_for_the_user": r.get("waiting"), "subtitles": text}
+    if r.get("stale"):
+        out["note"] = ("These lines were translated before their original was fixed (run the subtitles step of the video again to "
+                       f"translate them again): {', '.join(str(n) for n in r['stale'])}.")
+    return out
+
+
+def t_propose_corrections(a):
+    found = a.get("corrections")
+    if not isinstance(found, list):
+        raise ToolError("corrections: a list of {line, corrected, reason, confidence}.")
+    r = call("POST", _video_path(a, "corrections"), {"corrections": found, "by": str(a.get("by") or "assistant (MCP)"),
+                                                     "complete": a.get("whole_video_read") is not False})
+    if r.get("state") == "done":
+        then = ("Its subtitles are already made: once the user has decided, run_video with steps [\"subtitles\"] applies the "
+                "accepted fixes (the subtitles are cut again, the changed lines translated again; a paid translator asks first).")
+    elif r.get("state") == "paused":
+        then = "The video waits for a go-ahead: once the user has decided, approve_translation goes on with the accepted fixes."
+    else:
+        then = "The accepted fixes apply when the subtitles step of the video runs."
+    return {"proposed": r.get("proposed"),
+            "refused": [{"line": x.get("line"), "why": WHY_REFUSED.get(x.get("why"), x.get("why"))} for x in r.get("refused") or []],
+            "waiting_for_the_user": r.get("waiting"),
+            "next": "Nothing is applied yet: the user accepts, retouches or refuses each line on the page of the project. " + then}
+
+
+def t_pending_corrections(a):
+    r = call("GET", f"/api/projects/{urllib.parse.quote(str(a['project_id']))}/review")
+    return {"names": r.get("proposals") or [],
+            "lines": [{"video_id": v.get("item"), "video": v.get("title"), "fixes": v.get("corrections")} for v in r.get("corrections") or []]}
+
+
 PROJECT = {"project_id": {"type": "string", "description": "The id of the project (list_projects, new_project)."}}
 VIDEO = {"video_id": {"type": "string", "description": "The id of a video of the project (project_status)."}}
 STEP_LIST = {"type": "array", "items": {"type": "string", "enum": STEPS}}
@@ -214,6 +275,34 @@ TOOLS = {
     "approve_translation": (t_approve_translation, "Gives the go-ahead to a translation that waits for it (it may cost "
                             "money: tell the user the estimate of project_status and get their agreement first).",
                             PROJECT, ["project_id"], False),
+    "get_subtitles": (t_get_subtitles, "The subtitles of one video already transcribed, numbered, with the time each starts "
+                      "at: in the spoken language, or with language (e.g. \"en\") its translation with the original under each "
+                      "line. To review them (propose_corrections uses the same numbers) or to judge a translation. A long video "
+                      "can be read in parts with first and last.",
+                      {**PROJECT, **VIDEO, "language": {"type": "string", "description": "Code of a translation to read (default: the spoken language)."},
+                       "first": {"type": "integer", "description": "First line to give (default 1)."},
+                       "last": {"type": "integer", "description": "Last line to give (default: the last one)."}},
+                      ["project_id", "video_id"], True),
+    "propose_corrections": (t_propose_corrections, "Proposes lines to fix in the subtitles of a video, in its spoken language, "
+                            "after reading them with get_subtitles (same line numbers). Only mistakes of the automatic "
+                            "transcription: a word or a name heard wrong that the context settles, a number or a date that "
+                            "another line contradicts, a sentence never said (corrected \"\" removes it). Give the whole line "
+                            "corrected, the rest word for word: no restyling, no fix of spoken grammar or of punctuation alone, "
+                            "no line merged or moved, nothing translated; when in doubt, confidence low or nothing. Nothing is "
+                            "applied by this call: the user accepts, retouches or refuses each line on the page.",
+                            {**PROJECT, **VIDEO,
+                             "corrections": {"type": "array", "description": "The lines to fix.", "items": {
+                                 "type": "object", "required": ["line", "corrected", "reason"], "additionalProperties": False,
+                                 "properties": {"line": {"type": "integer", "description": "Its number in get_subtitles."},
+                                                "corrected": {"type": "string", "description": "The whole line, corrected (\"\": never said, to remove)."},
+                                                "reason": {"type": "string", "description": "One short sentence, in the user's language."},
+                                                "confidence": {"type": "string", "enum": ["high", "medium", "low"]}}}},
+                             "whole_video_read": {"type": "boolean", "description": "True (default) when every subtitle of the video "
+                                                  "was read: the AI review of the project will not read it again. False for a part only."}},
+                            ["project_id", "video_id", "corrections"], False),
+    "pending_corrections": (t_pending_corrections, "What the review of a project proposes and the user has not decided yet: "
+                            "the names heard wrong, and video by video the lines to fix (from the AI review or from "
+                            "propose_corrections).", PROJECT, ["project_id"], True),
     "pause_project": (t_pause_project, "Pauses a project: the videos under way finish, then it waits (now=true: stops at "
                       "once, what is finished is kept and a download resumes where it stopped). run_project resumes it.",
                       {**PROJECT, "now": {"type": "boolean"}}, ["project_id"], False),
@@ -252,7 +341,9 @@ def handle(msg: dict) -> dict | None:
             result = {"protocolVersion": asked if asked in KNOWN else PROTOCOL, "capabilities": {"tools": {}},
                       "serverInfo": {"name": "dl-sub-dub", "version": __version__},
                       "instructions": "dl-sub-dub downloads videos, subtitles them in the languages wanted and dubs them "
-                                      "with the original voice cloned. The web service must run. " + RIGHTS}
+                                      "with the original voice cloned. The web service must run. You can also review a "
+                                      "video yourself: get_subtitles, then propose_corrections; the user decides on the "
+                                      "page. " + RIGHTS}
         elif method == "ping":
             result = {}
         elif method == "tools/list":
