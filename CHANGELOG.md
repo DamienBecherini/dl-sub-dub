@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 (2026-11-17)
+
+An application of its own, Run that does what is ticked, and the project file in a new form (schema 2): a project
+saved by this version is refused by 0.1.0, with a clear message.
 
 - One dialog box at a time (File…, Folder…, List of addresses…, Open a project, the folders of the Settings): the
   clicks while one is open are ignored, and the service refuses a second one (409, from another tab or page) and
