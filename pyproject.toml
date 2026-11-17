@@ -13,6 +13,7 @@ dependencies = []
 
 [project.optional-dependencies]
 claude = ["anthropic"]
+app = ["pywebview>=5", "pywin32; sys_platform == 'win32'"]   # python -m subtitles.app: the page in a window, a shortcut
 dev = ["pytest", "ruff"]
 
 [project.scripts]
@@ -27,7 +28,7 @@ version = { attr = "subtitles.__version__" }
 include = ["subtitles*"]
 
 [tool.setuptools.package-data]
-subtitles = ["config.toml", "locales/*.json"]
+subtitles = ["config.toml", "locales/*.json", "icons/*"]
 "subtitles.web" = ["static/*", "static/v2/*", "static/vendor/*"]
 
 [tool.pytest.ini_options]

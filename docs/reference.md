@@ -244,7 +244,10 @@ problem (the timings come from the model, not from an estimate).
   - The delay runs from the end of the work: a task or a project that is running is never interrupted.
   - A tab left open does not count as activity.
   - A task or a project **waiting** (pause before translation, Pause) can be cut: the project is resumed from its file, a single video is run again, and in both cases `transcription.json` avoids transcribing again.
-- **State of the service.** `GET /api/health` follows the "local service" contract: busy or not, the activity under way (`video 3/22`), the time before the end of the work and before the stop.
+- **State of the service.** `GET /api/health` follows the "local service" contract: busy or not, the activity under way (`video 3/22`), the time before the end of the work and before the stop. `app` is true when the application started it.
+- **The window of the application.** `python -m subtitles.app` starts the service with `--app` if it does not run,
+  then tells it `POST /api/window {"open": true}`; closed, `{"open": false}`: the service stops as soon as its work is
+  done, at once if it has none, whatever `idle_min` (also 0). A service it did not start is never told.
 - **Local AI.** An OpenAI-compatible translator can give a supervision address (`POST /api/ai/start`) that starts the model on demand and stops it at the end of the task. This setting is optional: without it, the server must already run.
 - **File pickers.** They use the dialog of the system: PowerShell on Windows, `osascript` on macOS, `zenity` or `kdialog` on Linux. Without them, type the path.
 

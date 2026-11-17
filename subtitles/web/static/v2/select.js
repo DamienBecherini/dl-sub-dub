@@ -92,6 +92,14 @@ async function placeLine(line, r) {
   });
 }
 
+/* A line that could not be read (the service stopped or restarting, a site that did not answer…), read again: its
+   videos still take its place in the list. */
+function retryLine(line) {
+  changeLine(line.key, { error: "" });
+  const read = readLine(line);
+  turn = turn.then(() => read).then((r) => placeLine(line, r)).catch(() => {});
+}
+
 /* Entries typed, chosen or dropped → lines shown at once, then read. */
 export function addEntries(entries) {
   entries = entries.map((e) => e.trim()).filter((e) => e && !e.startsWith("#"));
@@ -410,7 +418,7 @@ function ReadingRow({ item }) {
       <span class=${`kind ${item.kind}`}>${T("v2.kind." + item.kind)}</span>
       <span class="item-title" title=${item.entry}>${item.title || item.entry}</span>
       <span class=${item.error ? "item-error-inline" : "item-origin"} title=${item.error}>${item.error || T("v2.add.reading")}</span>
-      <span></span>
+      ${item.error ? html`<button type="button" class="secondary small" onClick=${() => retryLine(item)}>${T("v2.line.retry")}</button>` : html`<span></span>`}
       <button type="button" class="close" title=${T("v2.list.remove")} aria-label=${T("v2.list.remove")}
               onClick=${() => remove(item)}>×</button>
     </li>`;

@@ -142,7 +142,7 @@ def _watch_idle(server):
     while True:
         time.sleep(1)
         if service.idle.expired():
-            log.info(i18n.t("srv.idle_stop", min=f"{service.idle.timeout_s() / 60:.0f}"))
+            log.info(i18n.t("srv.window_closed") if service.idle.leaving else i18n.t("srv.idle_stop", min=f"{service.idle.timeout_s() / 60:.0f}"))
             server.shutdown()
             return
 

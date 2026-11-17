@@ -156,6 +156,14 @@ def stop_local_transcription(req):
     return 200, {"ok": True}
 
 
+@route("POST", "/api/window")
+def application_window(req):
+    """{open: bool}: the window of the application (python -m subtitles.app) opened or closed. Closed, the service
+    stops as soon as its work is done (at once if it has none); opened again before that, it stays."""
+    service.idle.leave(not req.json().get("open"))
+    return 200, {"busy": service.busy()}
+
+
 @route("POST", "/api/dialog")
 def system_dialog(req):
     """{type: "file"|"folder"|"project"|"addresses"|"source_folder"|"download_folder"|"project_folder", start?} →

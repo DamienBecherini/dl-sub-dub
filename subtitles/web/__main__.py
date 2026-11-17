@@ -3,6 +3,7 @@ import argparse
 import webbrowser
 
 from .. import config, i18n
+from . import service
 from .server import serve
 
 
@@ -12,11 +13,13 @@ def main():
     p.add_argument("--port", type=int, help=i18n.t("cli.port"))
     p.add_argument("--open", action="store_true", help=i18n.t("cli.open"))
     p.add_argument("--idle", type=float, help=i18n.t("cli.idle"))
+    p.add_argument("--app", action="store_true", help=argparse.SUPPRESS)   # started by python -m subtitles.app
     a = p.parse_args()
     cfg = config.load()
     port = a.port or int(cfg.get("web", {}).get("port", 4420))
     if a.open:
         webbrowser.open(f"http://127.0.0.1:{port}/")
+    service.launched_by_app = a.app
     serve(port, a.idle)
 
 

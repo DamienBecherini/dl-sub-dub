@@ -102,6 +102,7 @@ the manager.
 | `web/server.py`, `web/router.py` | The checks of each request and its answer; the routing (`@route`, `Request`). Standard library `http.server`. |
 | `web/routes/` | The routes, one file per family of addresses: `pages.py`, `projects.py`, `videos.py` (a lone video, folders, addresses, files dropped), `system.py` (graphics card, cleaning, yt-dlp, dialog boxes, test of an engine). |
 | `web/service.py`, `web/desktop.py` | What the routes share (`manager`, the playlist download, the folder inventory, health); the dialog boxes and the opening of a file on the machine. |
+| `app.py`, `icons/` | The application: the page in a window (pywebview), the service started without a console and stopped when the window closes and its work is done, one window at a time, the shortcut (Windows Start menu, Linux menu entry). |
 | `mcp_server.py` | MCP server (stdio, JSON-RPC by hand, standard library): tools over the API for an AI assistant (`TOOLS`, `project_brief`). |
 | `cancellation.py` | The cancellation: a token that is asked (`cancelled()`, between two pieces of work) and that what waits for a program or a connection listens to (yt-dlp, the dubbing program, the transcription request), told the moment Stop is asked. |
 | `config.py`, `i18n.py`, `states.py`, `steps.py` | Settings in layers, messages in English and French, states as `StrEnum`, steps found done on the disk. |

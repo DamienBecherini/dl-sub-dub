@@ -188,8 +188,12 @@ the right to use, and let them listen to the result.
 - Downloads (Settings): the folder of the downloaded videos, the maximum quality (1080p by default) and other yt-dlp
   options, such as `--cookies-from-browser firefox` for videos that need an account.
 - Where the settings are, and that **Settings** on the page changes them later.
-- Offer, without insisting, a shortcut to start the page (a desktop shortcut, a shell alias): create it only if
-  the user wants one.
+- Offer, without insisting, the application: the page in a window of its own, started from a shortcut, without a
+  terminal (README "The page"). If the user wants it: `pip install ".[app]"`, then
+  `<install folder>/.venv/bin/python -m subtitles.app --shortcut` (add `desktop` for a desktop shortcut too).
+  On Windows, tell them to pin it themselves (right click, Pin to taskbar); on Linux, the window needs GTK or Qt
+  (installation of pywebview; not tried, ask before installing system packages), otherwise the page opens in the
+  browser.
 - If the user uses an AI assistant (Claude Desktop, Claude Code…), offer, without insisting, to register the MCP
   server (`<install folder>/.venv/bin/python -m subtitles.mcp_server`, README "An AI assistant (MCP)"): do it only if
   they want it.

@@ -244,7 +244,11 @@ problème de cadence (les temps viennent du modèle, pas d'une estimation).
   - Le délai court à partir de la fin du travail : une tâche ou un projet qui tourne n'est jamais interrompu.
   - Un onglet resté ouvert ne compte pas comme une activité.
   - Une tâche ou un projet **en attente** (pause avant traduction, Pause) peut être coupé : le projet se reprend par son fichier, une vidéo seule se relance, et dans les deux cas `transcription.json` évite de retranscrire.
-- **État du service.** `GET /api/health` suit le contrat « service local » : occupé ou non, activité en cours (`vidéo 3/22`), temps avant la fin du travail et avant l'arrêt.
+- **État du service.** `GET /api/health` suit le contrat « service local » : occupé ou non, activité en cours (`vidéo 3/22`), temps avant la fin du travail et avant l'arrêt. `app` vaut vrai quand l'application l'a démarré.
+- **La fenêtre de l'application.** `python -m subtitles.app` démarre le service avec `--app` s'il ne tourne pas, puis
+  lui dit `POST /api/window {"open": true}` ; fermée, `{"open": false}` : le service s'arrête dès que son travail est
+  fini, tout de suite s'il n'en a pas, quel que soit `idle_min` (0 compris). Un service qu'elle n'a pas démarré n'est
+  jamais prévenu.
 - **IA locale.** Un traducteur compatible OpenAI peut indiquer une adresse de supervision (`POST /api/ai/start`) qui démarre le modèle à la demande et l'arrête à la fin de la tâche. Ce réglage est facultatif : sans lui, le serveur doit déjà tourner.
 - **Sélecteurs de fichiers.** Ils utilisent la boîte de dialogue du système : PowerShell sous Windows, `osascript` sur macOS, `zenity` ou `kdialog` sous Linux. Sans eux, saisissez le chemin.
 

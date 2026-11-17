@@ -9,6 +9,7 @@ from .playlist import PlaylistDownload
 
 manager = Manager()
 imposed_timeout: float | None = None   # --idle of the command line
+launched_by_app = False                # --app: started by the application (python -m subtitles.app), which stops it
 current_scan: folder.FolderScan | None = None   # inventory of the folder in progress or displayed (one at a time)
 current_download: PlaylistDownload | None = None   # download of a playlist in progress or displayed (one at a time)
 
@@ -40,5 +41,5 @@ def health() -> dict:
     """Answer of GET /api/health, following the "local service" contract v2."""
     remaining = idle.remaining_s()
     return {"state": "ready", "contract": 2, "service": "subtitles", "version": __version__,
-            "busy": busy(), "activity": activity(), "remaining_work_s": manager.remaining_s(),
+            "busy": busy(), "activity": activity(), "remaining_work_s": manager.remaining_s(), "app": launched_by_app,
             "idle": {"timeout_s": idle_timeout_s(), "remaining_s": None if remaining is None else round(remaining, 1)}}

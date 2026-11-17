@@ -20,20 +20,30 @@ class IdleWatch:
         self.busy = busy                       # function: True as long as a task or a project is working
         self.clock = clock
         self.last = clock()
+        self.leaving = False                   # the window of the application closed: stop once the work is done
 
     def touch(self):
         self.last = self.clock()
+
+    def leave(self, on: bool = True):
+        self.leaving = on
 
     def expired(self) -> bool:
         if self.busy():
             self.touch()                       # the countdown starts from the end of the work
             return False
+        if self.leaving:
+            return True
         timeout = self.timeout_s()
         return timeout > 0 and self.clock() - self.last >= timeout
 
     def remaining_s(self) -> float | None:
         """Seconds before the shutdown; None if no countdown is running (work in progress, or shutdown disabled)."""
         timeout = self.timeout_s()
-        if timeout <= 0 or self.busy():
+        if self.busy():
+            return None
+        if self.leaving:
+            return 0.0
+        if timeout <= 0:
             return None
         return max(0.0, timeout - (self.clock() - self.last))

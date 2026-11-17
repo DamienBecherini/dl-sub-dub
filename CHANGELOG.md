@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+- dl-sub-dub as an application: `python -m subtitles.app` opens the page in a window of its own, with its icon, and
+  starts the service without a console if it does not run; `--shortcut` creates the shortcut (Windows Start menu,
+  Linux menu of the applications; `desktop` on the desktop too, `remove` removes them). Closing the window stops the
+  service as soon as its work is done (`POST /api/window`); a service started otherwise is used and left running. A
+  second start brings the window to the front. Optional: `pip install ".[app]"` (pywebview, and pywin32 on Windows);
+  without it, the page opens in the browser.
+- A line of the list that could not be read (the service stopped or restarting, a site that did not answer) has a
+  Retry button: the line is read again and its videos take its place. On a phone, such a line shows its title, its
+  message in full, then Retry (its title disappeared and its buttons fell on a row of their own).
+- The cards of the compact list on a phone: the step boxes first, the action of the line after them. The action stays
+  at the end of the row of boxes while it fits, and goes alone to the next row otherwise; it no longer takes a column
+  of its own, which pushed the third box to a second row (at 360 px, the three boxes now fit on one row).
+
 ## 0.1.0 (2026-11-17)
 
 First public version.

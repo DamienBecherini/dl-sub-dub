@@ -240,6 +240,24 @@ Puis, dans **Réglages › Doublage** : activez-le, donnez la commande (le Pytho
 .venv/bin/python -m subtitles.web --open   # http://127.0.0.1:4420/
 ```
 
+**En application**, dans sa propre fenêtre avec son icône, sans terminal : installez avec `".[app]"` au lieu de `.`
+(cela ajoute [pywebview](https://pywebview.flowrl.com/)), puis créez le raccourci une fois :
+
+```
+.venv/bin/pip install ".[app]"                   # Windows : .venv/Scripts/python -m pip install ".[app]"
+.venv/bin/python -m subtitles.app --shortcut     # ajoutez « desktop » pour le Bureau aussi, « remove » pour les enlever
+```
+
+- **Windows** : « dl-sub-dub » dans le menu Démarrer (clic droit, **Épingler à la barre des tâches** pour l'épingler).
+  **Linux** : dans le menu des applications ; la fenêtre a besoin de GTK ou de Qt (voir
+  l'[installation de pywebview](https://pywebview.flowrl.com/guide/installation.html), pas essayé), sans eux la page
+  s'ouvre dans le navigateur. **macOS** : pas de
+  raccourci, `python -m subtitles.app` ouvre la fenêtre (pas essayé).
+- Un clic démarre le service s'il ne tourne pas, et ouvre la fenêtre ; un second clic la ramène au premier plan.
+- Fermer la fenêtre arrête le service dès que son travail est fini : un projet qui tourne va jusqu'au bout sans la
+  fenêtre. Un service démarré autrement (à la main, au démarrage de la machine) est utilisé et laissé en marche.
+- La fenêtre a sa propre mémoire (thème, vue) : choisissez le thème une fois dedans. Sa taille et sa place sont gardées.
+
 Ajoutez des vidéos, cochez les langues, cliquez sur **Lancer**. Le reste se découvre sur place : chaque réglage a un **?** qui l'explique, et chaque icône d'état dit ce qu'elle signifie au survol ou d'un toucher. Chaque vidéo a aussi son bouton et son menu **▾**, pour lancer une ou plusieurs de ses étapes sans toucher aux autres.
 
 ### La ligne de commande
@@ -322,7 +340,7 @@ curl -s localhost:4420/api/projects/<id>
 
 | Ce que vous voyez | Ce qu'il faut regarder |
 |---|---|
-| « Le service dl-sub-dub ne répond pas » | Il s'est arrêté (seul après 60 min, ou fermé) : relancez `python -m subtitles.web`. |
+| « Le service dl-sub-dub ne répond pas » | Il s'est arrêté (seul après 60 min, ou fermé) : relancez `python -m subtitles.web`, ou cliquez sur le raccourci de l'application. |
 | **Tester** échoue pour la transcription | Le serveur est-il lancé, à la bonne adresse ? Un serveur qui ne renvoie que des segments, sans les mots horodatés, est refusé. |
 | Un téléchargement YouTube échoue | Mettez yt-dlp à jour (la page le propose quand il est ancien) et vérifiez son moteur JavaScript (Deno, ou Node 22 ou plus). |
 | Une vidéo demande un compte | Ajoutez `--cookies-from-browser firefox` (ou votre navigateur) dans **Réglages › Téléchargements**. |

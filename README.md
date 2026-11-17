@@ -239,6 +239,24 @@ Then, in **Settings › Dubbing**: turn it on, give the command (the Python of t
 .venv/bin/python -m subtitles.web --open   # http://127.0.0.1:4420/
 ```
 
+**As an application**, in a window of its own with its icon, without a terminal: install with `".[app]"` instead of
+`.` (it adds [pywebview](https://pywebview.flowrl.com/)), then create the shortcut once:
+
+```
+.venv/bin/pip install ".[app]"                   # Windows: .venv/Scripts/python -m pip install ".[app]"
+.venv/bin/python -m subtitles.app --shortcut     # add "desktop" for the desktop too, "remove" to remove them
+```
+
+- **Windows**: "dl-sub-dub" in the Start menu (right click, **Pin to taskbar** to pin it). **Linux**: in the menu of
+  the applications; the window needs GTK or Qt (see the
+  [installation of pywebview](https://pywebview.flowrl.com/guide/installation.html), not tried), without them the
+  page opens in the browser. **macOS**: no shortcut, `python -m subtitles.app` opens the window (not
+  tried).
+- A click starts the service if it does not run, and opens the window; a second click brings it to the front.
+- Closing the window stops the service as soon as its work is done: a project that runs goes on to its end without
+  the window. A service started otherwise (by hand, at the start of the machine) is used and left running.
+- The window keeps its own storage (theme, view): choose the theme once in it. Its size and place are kept.
+
 Add videos, tick the languages, click **Run**. The rest is found on the spot: each setting has a **?** that explains it, and each state icon says what it means on hover or on a tap. Each video also has its button and its **▾** menu, to run one or several of its steps without touching the others.
 
 ### The command line
@@ -319,7 +337,7 @@ curl -s localhost:4420/api/projects/<id>
 
 | What you see | What to look at |
 |---|---|
-| "The dl-sub-dub service does not answer" | It stopped (by itself after 60 min, or closed): run `python -m subtitles.web` again. |
+| "The dl-sub-dub service does not answer" | It stopped (by itself after 60 min, or closed): run `python -m subtitles.web` again, or click the shortcut of the application. |
 | **Test** fails for the transcription | Is the server running, at the right address? A server that returns only segments, without word timestamps, is refused. |
 | A YouTube download fails | Update yt-dlp (the page offers it when it is old) and check its JavaScript runtime (Deno, or Node 22 or later). |
 | A video needs an account | Add `--cookies-from-browser firefox` (or your browser) in **Settings › Downloads**. |
