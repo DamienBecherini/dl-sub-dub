@@ -212,6 +212,7 @@
   "other": "Téléchargement arrêté ({n} fichiers partiels supprimés)"
  },
  "log.dub_already_done": "Doublage {lang} déjà fait : {file}",
+ "log.dub_stale": "Doublage {langs} : la traduction a changé depuis la voix faite, voix et MKV refaits",
  "log.dub_done": "Doublage terminé en {s} s",
  "log.dub_integrated": "Doublage déjà intégré à la vidéo.",
  "log.dub_no_translation": "Pas de doublage : aucune traduction disponible.",

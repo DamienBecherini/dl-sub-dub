@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.1 (2026-11-17)
+
+- A fix accepted after the translation now reaches the translation made by an earlier version too (one that did not
+  keep its originals): its lines are compared with the subtitles cut without the accepted fixes, and those that differ
+  are translated again. Before, such a translation was kept as it was.
+- A dubbed voice made before its translation changed is made again, and the MKV with it ("the translation changed
+  since the voice was made" in the log). A chain of steps asked again for a video (Subtitles then Dubbing) makes again
+  its steps already done instead of skipping them. Not for a video whose MKV replaced the original file.
+
 ## 0.3.0 (2026-11-17)
 
 The AI review of whole videos, by any model of the Settings or by an assistant through the MCP server; Claude Code

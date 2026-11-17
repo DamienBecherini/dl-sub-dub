@@ -1,6 +1,7 @@
 """Step 4, Dubbing: the dubbed language (of the project, of a video), the MKV or the dubbed track alone, what the
 page shows of the engine."""
 
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -71,6 +72,32 @@ def test_an_mkv_with_a_voice_per_language(tmp_path, monkeypatch):
     work = tmp_path / "work"
     assert steps.observe(work, res.video, ["fr", "de"], "en", set(), ["fr", "de"])["muxed"]
     assert not steps.observe(work, res.video, ["fr", "de", "es"], "en", set(), ["fr", "de", "es"])["muxed"]
+
+
+def test_a_voice_made_before_its_translation_changed_is_made_again(tmp_path, monkeypatch):
+    import os
+    redone = []
+    monkeypatch.setattr(dubbing, "dub", lambda cfg, video, work, src, srt, target, log, cancelled, redo, **k: redone.append((target, redo)) or steps.dubbing_file(work, target))
+    made = []
+    monkeypatch.setattr(muxing, "mux", lambda video, dubbed, target, spoken, subs, log, redo: made.append(redo) or steps.mkv_path(video))
+    files = [SimpleNamespace(language="fr", path=tmp_path / "v.fr.srt", translated=False),
+             SimpleNamespace(language="en", path=tmp_path / "v.en.srt", translated=True)]
+    r, p = SimpleNamespace(redo=False, cfg={}), SimpleNamespace(work=tmp_path / "work")
+    res = SimpleNamespace(video=tmp_path / "v.mp4", language="fr", files=files)
+    voice, translated = steps.dubbing_file(p.work, "en"), pipeline.translation_file(p.work, "en")
+    voice.parent.mkdir(parents=True)
+    voice.write_bytes(b"voice")
+    translated.write_text(json.dumps(["Hello"]), encoding="utf-8")
+    os.utime(translated, (1, 1))                                                   # the translation, then the voice
+    steps.mkv_path(res.video).write_bytes(b"mkv")
+    steps.mux_mark(p.work).write_text(json.dumps({"languages": ["en"]}), encoding="utf-8")
+    pipeline.dub_and_mux(r, p, res, "mux", log=lambda *_: None)
+    assert not redone and not made                                                 # up to date: nothing again
+    os.utime(voice, (1, 1))
+    os.utime(translated, None)                                                     # lines translated again since
+    said = []
+    pipeline.dub_and_mux(r, p, res, "mux", log=said.append)
+    assert redone == [("en", True)] and made == [True] and "en" in said[0]
 
 
 @pytest.fixture

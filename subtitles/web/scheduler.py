@@ -196,6 +196,9 @@ class Scheduler:
             item.facts["then"] = [s.value for s in chain[1:]]
             for s in chain:
                 item.tick(s, True)
+            for s in chain[1:]:                    # asked again: a step done is made again (its subtitles may have changed)
+                if item.state(s) == S.DONE:
+                    item.apply(s, E.RESET)
             run.follow_ticks()
             run.save()
         if self.run_item(ident, item_id, chain[0]):

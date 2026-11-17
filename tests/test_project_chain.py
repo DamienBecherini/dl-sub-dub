@@ -76,6 +76,23 @@ def test_subtitle_then_dub_a_file(g, tmp_path):
     assert item.state(Stage.DUBBING) == S.RUNNING
 
 
+def test_a_chain_asked_again_makes_again_its_steps_done(g, tmp_path):
+    f = tmp_path / "f.mp4"
+    f.write_bytes(b"x")
+    run = project(g, tmp_path, [f.as_posix()])
+    item = run.project.items[0]
+    assert g.projects.run_chain(run.id, item.id, [Stage.SUBTITLES, Stage.DUBBING])
+    subtitled(g, item)
+    t = g.queue.get(item.stages[Stage.DUBBING].task)
+    t.state = "done"
+    g.projects.task_changed(t)
+    assert item.state(Stage.SUBTITLES) == S.DONE and item.state(Stage.DUBBING) == S.DONE
+    assert g.projects.run_chain(run.id, item.id, [Stage.SUBTITLES, Stage.DUBBING])          # after a fix, say
+    assert item.state(Stage.SUBTITLES) == S.RUNNING and item.state(Stage.DUBBING) == S.TODO
+    subtitled(g, item)
+    assert item.state(Stage.DUBBING) == S.RUNNING                                   # not skipped as done
+
+
 def test_a_failed_step_ends_the_chain(g, tmp_path):
     run = project(g, tmp_path, [A])
     a = run.project.items[0]

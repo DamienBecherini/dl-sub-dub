@@ -66,6 +66,7 @@ class Prepared:
     source_srt: Path
     output_dir: Path
     start: float
+    before: list[str] | None = None    # the subtitles cut without the fixes accepted (see translation_of); None: no fix accepted
 
 
 @dataclass
@@ -126,10 +127,11 @@ def translation_source_file(work: Path, target: str) -> Path:
     return work / f"translation.{target}.source.json"
 
 
-def translation_of(work: Path, target: str, texts: list[str]) -> tuple[list[str] | None, list[int]]:
+def translation_of(work: Path, target: str, texts: list[str], before: list[str] | None = None) -> tuple[list[str] | None, list[int]]:
     """The translation kept of these subtitles into `target`, and the indexes of its lines to translate again (their
-    original changed since; known when the originals were kept with it). (None, []) without a translation of this
-    segmentation."""
+    original changed since). (None, []) without a translation of this segmentation. Its originals are those kept with
+    it; for a translation of an earlier version, which kept none, made before the last fix decided: `before`, the
+    subtitles cut without the fixes accepted."""
     def read(f: Path):
         try:
             d = json.loads(f.read_text(encoding="utf-8"))
@@ -140,7 +142,16 @@ def translation_of(work: Path, target: str, texts: list[str]) -> tuple[list[str]
     if translated is None:
         return None, []
     made_from = read(translation_source_file(work, target))
+    if made_from is None and before is not None and len(before) == len(texts) and _older(translation_file(work, target), corrections.path_for(work)):
+        made_from = before
     return translated, ([i for i, (a, b) in enumerate(zip(made_from, texts)) if a != b] if made_from is not None else [])
+
+
+def _older(a: Path, b: Path) -> bool:
+    try:
+        return a.stat().st_mtime < b.stat().st_mtime
+    except OSError:
+        return False
 
 
 def remaining_languages(p: Prepared, languages: list[str], redo: bool = False) -> list[str]:
@@ -149,7 +160,7 @@ def remaining_languages(p: Prepared, languages: list[str], redo: bool = False) -
     texts = [getattr(s, "text", "") for s in p.cues]
 
     def done(target: str) -> bool:
-        translated, changed = translation_of(p.work, target, texts)
+        translated, changed = translation_of(p.work, target, texts, getattr(p, "before", None))
         return translated is not None and not changed
     return [c for c in languages if c != p.code and (redo or not done(c))]
 
@@ -158,10 +169,10 @@ def work_dir(output_dir: str | Path, video: str | Path) -> Path:
     return Path(output_dir) / ".work" / source.slug(Path(video).stem)
 
 
-def cut(words: list[dict], work: Path, glossary_file, settings: Settings, log=lambda _m: None) -> list:
+def cut(words: list[dict], work: Path, glossary_file, settings: Settings, log=lambda _m: None, fixes: bool = True) -> list:
     """The subtitles of a transcription, in its language: its words, fixed by the lines of the full AI review that were
-    accepted and by the names of the glossary, then cut."""
-    words, corrected = corrections.apply(words, corrections.accepted(work))
+    accepted (unless `fixes` is false) and by the names of the glossary, then cut."""
+    words, corrected = corrections.apply(words, corrections.accepted(work) if fixes else [])
     if corrected:
         log(i18n.t("log.corrections_applied", n=corrected))
     words, fixes = glossary.fix_words(words, glossary.load(glossary_file))
@@ -170,14 +181,14 @@ def cut(words: list[dict], work: Path, glossary_file, settings: Settings, log=la
     return segmentation.build(segmentation.from_json(words), settings)
 
 
-def kept_cues(cfg: dict, work: str | Path, glossary_file=None) -> list | None:
-    """The subtitles in the original language of a video already transcribed, as the Subtitles step cuts them now;
-    None without a transcription."""
+def kept_cues(cfg: dict, work: str | Path, glossary_file=None, fixes: bool = True) -> list | None:
+    """The subtitles in the original language of a video already transcribed, as the Subtitles step cuts them now
+    (without the fixes accepted if `fixes` is false); None without a transcription."""
     try:
         words = json.loads((Path(work) / "transcription.json").read_text(encoding="utf-8"))["words"]
     except (OSError, ValueError, KeyError, TypeError):
         return None
-    return cut(words, Path(work), glossary_file, Settings(**cfg.get("subtitles", {}))) if words else None
+    return cut(words, Path(work), glossary_file, Settings(**cfg.get("subtitles", {})), fixes=fixes) if words else None
 
 
 def transcription_kept(output_dir: str | Path, video: str | Path) -> bool:
@@ -272,10 +283,11 @@ def prepare(r: Request, log=print, step=lambda name: None, cancelled=lambda: Fal
     step("segmentation")
     code = wanted_language or tr.get("language") or language.detect(tr.get("text", "")) or _asked_language(work) or "xx"
     cues = cut(tr["words"], work, r.glossary, settings, log)      # with the lines fixed by the full review, and the glossary
+    before = [c.text for c in cut(tr["words"], work, r.glossary, settings, fixes=False)] if corrections.accepted(work) else None
     source_srt = work / f"{base}.{code}.srt"
     source_srt.write_text(formats.srt(cues, settings), encoding="utf-8")
     log(i18n.t("log.source_subtitles", code=code, lang=i18n.language_name(code), n=len(cues), file=source_srt.name))
-    return Prepared(video, work, base, code, cues, source_srt, output_dir, t_start)
+    return Prepared(video, work, base, code, cues, source_srt, output_dir, t_start, before)
 
 
 def _fingerprint(f: Path) -> str:
@@ -350,7 +362,7 @@ def translate_and_copy(r: Request, p: Prepared, log=print, step=lambda name: Non
                 trans_file = translation_file(p.work, target)
                 translated, changed = None, []
                 if trans_file.exists() and not r.redo:
-                    translated, changed = translation_of(p.work, target, texts)
+                    translated, changed = translation_of(p.work, target, texts, p.before)
                     if translated is None:
                         log(i18n.t("log.translation_other_split", lang=target))
                     elif not changed:
@@ -455,7 +467,11 @@ def dub_and_mux(r: Request, p: Prepared, res: Result, until: str, log=print, ste
     made = steps.muxed_languages(p.work)
     if made is None and (integrated or steps.mkv_path(res.video).exists()):
         made = voices[:1]                          # an MKV made before several languages: its one voice
-    already = set(made or []) >= set(voices) and not r.redo
+    # a voice made before its translation changed (lines translated again after a fix): made again, the MKV with it
+    stale = [] if integrated else [c for c in voices if _older(steps.dubbing_file(p.work, c), translation_file(p.work, c))]
+    if stale:
+        log(i18n.t("log.dub_stale", langs=", ".join(stale)))
+    already = set(made or []) >= set(voices) and not r.redo and not stale
     with_mkv = steps.goes_to(until, "mux")
     if integrated and already:
         log(i18n.t("log.dub_integrated"))
@@ -475,8 +491,8 @@ def dub_and_mux(r: Request, p: Prepared, res: Result, until: str, log=print, ste
         voice = [n + 1, len(to_dub)] if len(to_dub) > 1 else None
         progress = (lambda d, total, n=n, voice=voice: on(n * total + d, len(to_dub) * total, 0, voice)) if on else None
         try:
-            audio = dubbing.dub(r.cfg, res.video, p.work, res.files[0].path, translated[code].path, code, log, cancelled, r.redo,
-                                progress=progress, phase=step)
+            audio = dubbing.dub(r.cfg, res.video, p.work, res.files[0].path, translated[code].path, code, log, cancelled,
+                                r.redo or code in stale, progress=progress, phase=step)
         except dubbing.DubbingError:
             if cancelled():
                 raise Cancelled() from None

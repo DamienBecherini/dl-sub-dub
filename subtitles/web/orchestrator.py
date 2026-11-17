@@ -301,7 +301,8 @@ class Orchestrator(Scheduler):
                "lines": [{"line": i + 1, "start": round(c.start, 2), "end": round(c.end, 2), "text": c.text} for i, c in enumerate(cues)]}
         wanted = (wanted or "").strip().lower()
         if wanted and wanted != spoken:
-            translated, changed = pipeline.translation_of(work, wanted, [c.text for c in cues])
+            before = pipeline.kept_cues(config.load(), work, glossary.path_for(run.file), fixes=False) if corrections.accepted(work) else None
+            translated, changed = pipeline.translation_of(work, wanted, [c.text for c in cues], [c.text for c in before] if before else None)
             out.update(language=wanted, translated=translated is not None, stale=[i + 1 for i in changed])
             for line, text in zip(out["lines"], translated or []):
                 line["translation"] = text

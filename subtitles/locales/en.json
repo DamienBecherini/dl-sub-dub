@@ -212,6 +212,7 @@
   "other": "Download stopped ({n} partial files deleted)"
  },
  "log.dub_already_done": "{lang} dub already done: {file}",
+ "log.dub_stale": "Dubbing {langs}: the translation changed since the voice was made, voice and MKV made again",
  "log.dub_done": "Dubbing finished in {s} s",
  "log.dub_integrated": "Dub already integrated into the video.",
  "log.dub_no_translation": "No dub: no translation available.",

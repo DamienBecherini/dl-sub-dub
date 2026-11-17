@@ -672,3 +672,42 @@ def test_only_the_lines_whose_original_changed_are_translated_again(monkeypatch,
     assert any("1 ligne(s) dont l'original a changé" in line for line in said) and pipeline.remaining_languages(p, ["fr"]) == []
     pipeline.translate_and_copy(r, p, log=said.append)
     assert len(asked) == 2                                 # nothing more to translate
+
+
+def test_a_translation_of_an_earlier_version_follows_the_fixes_decided_after_it(monkeypatch, tmp_path):
+    """Made before its originals were kept (no translation.<language>.source.json), then a fix accepted: that line is
+    translated again, found by cutting the subtitles without the fixes accepted."""
+    video, work = project_folder(tmp_path)
+    cfg = settings(tmp_path, [LOCAL])
+    asked = []
+
+    class Translator:
+        at_once = 1
+
+        def prepare(self):
+            pass
+
+        def complete(self, system, request, schema=None, effort=None):
+            asked.append(request)
+            lines = request.split("Lignes à traduire :\n")[1].splitlines()
+            return "\n".join(f"{i + 1}. FR {line.split('. ', 1)[1]}" for i, line in enumerate(lines))
+
+        def finish(self):
+            pass
+    monkeypatch.setattr(translation, "create", lambda m, log=print: Translator())
+    r = pipeline.Request(source=str(video), cfg=cfg, languages=["fr"], translator_id="local", output_dir=str(tmp_path), cleanup=False)
+    old = [f"FR {s}" for s in SENTENCES]
+    pipeline.translation_file(work, "fr").write_text(json.dumps(old), encoding="utf-8")       # an earlier version: no originals kept
+    p = pipeline.prepare(r, log=lambda _m: None)
+    assert p.before is None and pipeline.remaining_languages(p, ["fr"]) == []
+    corrections.propose(work, p.cues, [fix(1, "We met Peter in the laboratory.")], "assistant")
+    corrections.decide(work, [{"id": "c0", "accept": True}])
+    import os
+    os.utime(pipeline.translation_file(work, "fr"), (1, 1))                                  # made before the decision
+    p = pipeline.prepare(r, log=lambda _m: None)
+    assert p.before == SENTENCES and pipeline.remaining_languages(p, ["fr"]) == ["fr"]
+    pipeline.translate_and_copy(r, p, log=lambda _m: None)
+    assert len(asked) == 1 and "laboratory" in asked[0] and "genome" not in asked[0]          # that line alone
+    fr = json.loads(pipeline.translation_file(work, "fr").read_text(encoding="utf-8"))
+    assert fr[0] == "FR We met Peter in the laboratory." and fr[1:] == old[1:]
+    assert pipeline.remaining_languages(pipeline.prepare(r, log=lambda _m: None), ["fr"]) == []    # its originals are kept now
