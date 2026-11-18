@@ -11,6 +11,7 @@
 [![Translation](https://img.shields.io/badge/translation-local%20LLM%20%7C%20Claude%20%7C%20OpenAI--compatible-D97757)](#connect-the-engines)
 [![Transcription server](https://img.shields.io/badge/transcription-transcription--handy--like-BC52EE)](https://github.com/DamienBecherini/transcription-handy-like)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![CI](https://github.com/DamienBecherini/dl-sub-dub/actions/workflows/ci.yml/badge.svg)](https://github.com/DamienBecherini/dl-sub-dub/actions/workflows/ci.yml)
 
 **English** · [Français](README.fr.md) · [Reference](docs/reference.md) · [How the code fits together](docs/code.md) · [Security](SECURITY.md)
 
@@ -28,6 +29,8 @@ The tool runs on your machine, with the engines you choose:
 - **Four ways to use it**: [the local web page](#the-page), [the command line](#the-command-line), [an AI assistant (MCP)](#an-ai-assistant-mcp), or [the API](#the-api) for your own scripts.
 
 ![The page: each video with its boxes for the steps, its state in each one, its own settings and its log](docs/images/en/workshop-dark.png)
+
+**What this repository shows:** a Python package with no runtime dependency outside the standard library (`dependencies = []` in [pyproject.toml](pyproject.toml)), which drives FFmpeg and yt-dlp as subprocesses. The transcription comes with word timestamps from a server you run, [transcription-handy-like](https://github.com/DamienBecherini/transcription-handy-like) or any OpenAI-compatible one; the translation goes through a local LLM, the Claude API, Claude Code or any OpenAI-compatible API. 526 pytest tests, in which the engines, yt-dlp and the dubbing worker are fakes and nothing goes on the network, run with a ruff lint on every push and pull request (Python 3.11 and the latest stable release).
 
 ## Why
 

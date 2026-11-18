@@ -93,7 +93,7 @@ def test_save_and_load(tmp_path):
     p = Project(tmp_path.as_posix(), [Item(_video(tmp_path))], {"languages": ["fr"]})
     f = store.path_for(tmp_path, None, False)
     store.save(p, f)
-    assert f.name == store.FILE_NAME and [x.name for x in tmp_path.iterdir()] == ["a.mp4", store.FILE_NAME]   # no temporary file left
+    assert f.name == store.FILE_NAME and sorted(x.name for x in tmp_path.iterdir()) == ["a.mp4", store.FILE_NAME]   # no temporary file left
     back = store.load(f)
     assert back.to_dict() == p.to_dict() and back.updated
     assert store.find(tmp_path) == f

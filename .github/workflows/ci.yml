@@ -1,0 +1,41 @@
+name: CI
+
+# Lint, then the whole test suite on the oldest supported Python and on the latest stable one.
+# No secret and no network: the transcription and translation engines, yt-dlp and the dubbing worker are
+# replaced by fakes, and no test reads a real site. FFmpeg is installed so that the tests that cut and mux media run too.
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.x"
+      - run: python -m pip install ruff
+      - run: python -m ruff check .
+
+  tests:
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.x"]
+    runs-on: ubuntu-latest
+    # The suite takes under a minute; an Ubuntu mirror that is slow at times must not hold a job for hours.
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: ${{ matrix.python }}
+      - name: FFmpeg
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      - run: python -m pip install ".[dev]"
+      - run: python -m pytest -q
