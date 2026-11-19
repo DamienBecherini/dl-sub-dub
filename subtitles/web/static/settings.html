@@ -49,7 +49,7 @@
         <span class="cfg-t"><b data-i18n="ui.cfg.cat.folders"></b><span class="cfg-sum" data-sum="folders"></span></span><span class="cfg-dot" hidden></span><span class="cfg-chev" aria-hidden="true">›</span></a>
       <a class="cfg-cat" href="#app" data-cat="app"><span class="cfg-ic" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg></span>
         <span class="cfg-t"><b data-i18n="ui.cfg.cat.app"></b><span class="cfg-sum" data-sum="app"></span></span><span class="cfg-dot" hidden></span><span class="cfg-chev" aria-hidden="true">›</span></a>
-      <p class="help cfg-legend"><span class="cfg-dot"></span> <span data-i18n="ui.cfg.modified"></span></p>
+      <p class="help cfg-legend" hidden><span class="cfg-dot"></span> <span data-i18n="ui.cfg.modified"></span></p>
     </nav>
 
     <div class="cfg-pages">
@@ -163,6 +163,13 @@
         <label class="wide"><span data-i18n="ui.output_folder"></span>
           <span class="row"><input type="text" id="cfg-output-dir" spellcheck="false"> <button type="button" class="secondary small" id="btn-cfg-output-dir" data-i18n="ui.browse"></button></span>
           <span class="help" data-i18n="ui.cfg.output_dir_help"></span></label>
+      </div>
+      <div class="grid" data-no-save>
+        <label class="wide"><span data-i18n="ui.cfg.data_dir"></span>
+          <span class="row"><input type="text" id="cfg-data-dir" spellcheck="false"> <button type="button" class="secondary small" id="btn-cfg-data-dir" data-i18n="ui.browse"></button>
+            <button type="button" class="secondary small" id="btn-move-data-dir" data-i18n="ui.cfg.data_dir_move"></button></span>
+          <span class="help" data-i18n="ui.cfg.data_dir_help"></span>
+          <span class="help" id="data-dir-feedback" role="status"></span></label>
       </div>
       <h4><span data-i18n="ui.cfg.cleanup"></span> <span class="help" data-i18n="ui.cfg.cleanup_help"></span></h4>
       <div class="checks">

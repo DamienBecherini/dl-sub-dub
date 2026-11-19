@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- The settings, the history, the measured speeds and the last project can move to a folder of your choice (one
+  that is backed up, for instance): Settings > Folders > "Folder of the settings and the history". Nothing is
+  overwritten, the service uses the new folder at once, and `%LOCALAPPDATA%\subtitles` keeps only what belongs to
+  the machine (log, window, thumbnails) and `location.json`, which names that folder.
+
 ## 0.3.1 (2026-11-17)
 
 - A fix accepted after the translation now reaches the translation made by an earlier version too (one that did not

@@ -8,7 +8,8 @@ A folder becomes a project, as in the web interface: a dl-sub-dub.project.json f
 running the same command again after an interruption resumes where the project stopped.
 
 Web interface: python -m subtitles.web (see README). Settings come from config.toml overridden by
-%LOCALAPPDATA%/subtitles/config.json (written by the web interface); the options below take precedence.
+config.json of the data folder (%LOCALAPPDATA%/subtitles unless moved in Settings; written by the web interface); the
+options below take precedence.
 """
 import argparse
 import subprocess

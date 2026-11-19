@@ -6,7 +6,7 @@ import subprocess
 import threading
 from pathlib import Path
 
-from ... import cleanup, config, dubbing, gpu, i18n, local_transcription, source, steps, transcription, translation, ytdlp
+from ... import cleanup, config, data_location, dubbing, gpu, i18n, local_transcription, source, steps, transcription, translation, ytdlp
 from .. import desktop, service
 from ..router import RequestError, route
 
@@ -114,6 +114,34 @@ def cleanup_run(req):
     return 200, {"root": str(root), "deleted": cleanup.clean_all(root, opts), "categories": cleanup.summary(root)}
 
 
+# --- the folder of the user's data (data_location.py) ---
+@route("GET", "/api/data-location")
+def data_location_get(req):
+    """{current, fixed}: the folder of the settings and the history, and the fixed folder of the application."""
+    return 200, {"current": str(data_location.current()), "fixed": str(config.state_dir())}
+
+
+@route("POST", "/api/data-location/check")
+def data_location_check(req):
+    """{path} → {path, exists, same, has_data, error?}"""
+    return 200, data_location.analyze(req.json().get("path", ""))
+
+
+@route("POST", "/api/data-location")
+def data_location_move(req):
+    """{path, action: "move"|"use"} → {message, current}. Refused while a task or a project runs (they write the
+    history and the speeds)."""
+    d = req.json()
+    if service.manager.queue.current() or service.manager.projects.active():
+        raise RequestError(409, i18n.t("err.task_running_location"))
+    try:
+        message = data_location.move(d.get("path", ""), d.get("action", "move"))
+    except (ValueError, OSError) as e:
+        raise RequestError(400, str(e)) from e
+    service.manager.projects.settings_changed()
+    return 200, {"message": message, "current": str(data_location.current())}
+
+
 # --- yt-dlp: version, update ---
 YTDLP_UPDATE: "ytdlp.Update | None" = None
 
@@ -166,7 +194,7 @@ def application_window(req):
 
 @route("POST", "/api/dialog")
 def system_dialog(req):
-    """{type: "file"|"folder"|"project"|"addresses"|"source_folder"|"download_folder"|"project_folder", start?} →
+    """{type: "file"|"folder"|"project"|"addresses"|"source_folder"|"download_folder"|"project_folder"|"data_folder", start?} →
     {path, paths}: the first path chosen, and all of them (several videos or lists at once)."""
     d = req.json()
     paths = desktop.dialog(d.get("type", "file"), d.get("start", ""))

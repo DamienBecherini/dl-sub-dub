@@ -17,6 +17,7 @@ _ONE_DIALOG = threading.Lock()                 # one dialog box at a time, whate
 _open_dialog: subprocess.Popen | None = None   # the one open, to bring it to the front
 _TITLES = {"file": "dialog.pick_video", "project": "dialog.pick_project", "source_folder": "dialog.source_folder",
            "download_folder": "dialog.download_folder", "project_folder": "dialog.project_folder",
+           "data_folder": "dialog.data_folder",
            "addresses": "dialog.pick_addresses"}   # any other kind: the output folder
 _VIDEOS = "*.mp4 *.mkv *.webm *.mov *.avi *.m4a *.mp3 *.opus *.ogg *.wav *.flac"
 _PATTERNS = {"file": (_VIDEOS, "dialog.videos_audio"), "project": ("*.project.json *.batch.json", "dialog.project_file"),

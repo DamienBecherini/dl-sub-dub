@@ -38,7 +38,7 @@ def test_info_of_a_file(tmp_path):
 
 
 def test_thumbnail_made_once(tmp_path, monkeypatch):
-    monkeypatch.setattr(config, "user_dir", lambda: tmp_path / "user")
+    monkeypatch.setattr(config, "state_dir", lambda: tmp_path / "user")
     video = tmp_path / "v.mp4"
     video.write_bytes(b"x")
     calls = []

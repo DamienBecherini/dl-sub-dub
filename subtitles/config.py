@@ -15,12 +15,28 @@ from . import i18n
 DEFAULTS_FILE = Path(__file__).resolve().parent / "config.toml"
 
 
-def user_dir() -> Path:
+def state_dir() -> Path:
+    """The fixed folder of the application on this machine (%LOCALAPPDATA%\\subtitles): its log, lock, window and
+    thumbnails, and location.json, which says where the user's data is."""
     base = os.environ.get("LOCALAPPDATA") or os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
     return Path(base) / "subtitles"
 
 
-USER_FILE = user_dir() / "config.json"
+LOCATION_FILE = "location.json"
+
+
+def user_dir() -> Path:
+    """The folder of the user's data (settings, history, speeds, last project): the one location.json names (chosen
+    in Settings, see data_location.py), else the fixed folder."""
+    try:
+        data = json.loads((state_dir() / LOCATION_FILE).read_text(encoding="utf-8")).get("data")
+    except (OSError, ValueError, AttributeError):
+        data = None
+    return Path(os.path.expandvars(data)) if data else state_dir()
+
+
+USER_FILE = user_dir() / "config.json"       # changed when the data moves (data_location.repoint)
+_CURRENT = object()                          # default of load and save: USER_FILE as it is at the time of the call
 REFERENCES = ("env:", "file:", "sops:")
 
 
@@ -42,9 +58,11 @@ _CACHE_LOCK = threading.Lock()
 _SAVE_LOCK = threading.Lock()
 
 
-def load(defaults_file: Path = DEFAULTS_FILE, user_file: Path | None = USER_FILE) -> dict:
+def load(defaults_file: Path = DEFAULTS_FILE, user_file=_CURRENT) -> dict:
     """The settings: read again only when one of the two files changed (its time or size), a copy each time (the
-    callers change what they get)."""
+    callers change what they get). user_file None: the defaults alone."""
+    if user_file is _CURRENT:
+        user_file = USER_FILE
     key = (str(defaults_file), str(user_file), _stamp(defaults_file), _stamp(user_file))
     with _CACHE_LOCK:
         cached = _CACHE.get(key)
@@ -87,7 +105,9 @@ def merge(base: dict, over: dict) -> dict:
     return r
 
 
-def save(cfg: dict, file: Path = USER_FILE):
+def save(cfg: dict, file=_CURRENT):
+    if file is _CURRENT:
+        file = USER_FILE
     for m in cfg.get("transcriptions", []) + cfg.get("translators", []):
         key = str(m.get("key", ""))
         if key and not key.startswith(REFERENCES):

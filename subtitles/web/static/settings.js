@@ -33,8 +33,8 @@ async function choosePath(type, startDir = "") {
 }
 
 /* Everything the form (or one category of it) holds, to know whether something was changed and not saved (engines
-   added or deleted included). */
-const valuesOf = (root) => JSON.stringify([...root.querySelectorAll("input, select")]
+   added or deleted included). The folder of the data is not part of it: it moves with its own button. */
+const valuesOf = (root) => JSON.stringify([...root.querySelectorAll("input, select")].filter((e) => !e.closest("[data-no-save]"))
   .map((e) => (e.type === "checkbox" || e.type === "radio" ? e.checked : e.value)));
 const formState = () => valuesOf($("#form-settings"));
 
@@ -141,10 +141,13 @@ function showSummaries() {
     const el = document.querySelector(`.cfg-sum[data-sum="${cat}"]`);
     if (el) { el.textContent = text; el.title = text; }
   }
+  let changed = false;
   for (const p of document.querySelectorAll(".cfg-page")) {
     const dot = document.querySelector(`.cfg-cat[data-cat="${p.dataset.cat}"] .cfg-dot`);
     if (dot) dot.hidden = valuesOf(p) === savedPages[p.dataset.cat];
+    changed ||= dot ? !dot.hidden : false;
   }
+  $(".cfg-legend").hidden = !changed;          // the legend of the dot, only when a dot is shown (alone, it read as a state)
 }
 
 /* The page of the hash (#translation); none on a phone: the list; none on a computer: the first one. */
@@ -320,6 +323,38 @@ async function cleanNow(ev) {
   finally { ev.target.disabled = false; }
 }
 
+/* The folder of the settings and the history: moved at once (not with Save), after a confirmation; a folder that
+   already holds settings is offered to be used instead. The page is filled again from the settings now in use. */
+async function showDataDir() {
+  try { $("#cfg-data-dir").value = (await api("GET", "/api/data-location")).current; }
+  catch (err) { $("#data-dir-feedback").textContent = err.message; }
+}
+
+async function moveDataDir(ev) {
+  const feedback = $("#data-dir-feedback");
+  if (formState() !== savedState) { feedback.textContent = T("ui.cfg.data_dir_unsaved"); return; }
+  const path = $("#cfg-data-dir").value.trim();
+  ev.target.disabled = true;
+  try {
+    const info = await api("POST", "/api/data-location/check", { path });
+    if (info.error) { feedback.textContent = info.error; return; }
+    if (info.same) { feedback.textContent = ""; return; }
+    let action = "move";
+    if (info.has_data) {
+      if (!confirm(T("ui.cfg.data_dir_use", { path: info.path }))) return;
+      action = "use";
+    } else if (!confirm(T("ui.cfg.data_dir_confirm", { path: info.path }))) return;
+    feedback.textContent = T("ui.cfg.data_dir_moving");
+    const r = await api("POST", "/api/data-location", { path: info.path, action });
+    $("#cfg-data-dir").value = r.current;
+    config = await api("GET", "/api/config");
+    fillSettings();
+    savedState = formState();
+    feedback.textContent = r.message;
+  } catch (err) { feedback.textContent = T("ui.failed", { error: err.message }); }
+  finally { ev.target.disabled = false; }
+}
+
 // --- the page ---
 /* Back to where one came from (the page of the four steps), after asking if changes would be lost. */
 function leave() {
@@ -363,6 +398,12 @@ function leave() {
   $("#btn-save-settings").addEventListener("click", save);
   $("#btn-cancel-settings").addEventListener("click", () => { savedState = formState(); location.href = "/"; });   // changes dropped
   $("#btn-clean").addEventListener("click", cleanNow);
+  showDataDir();
+  $("#btn-cfg-data-dir").addEventListener("click", async () => {
+    const path = await choosePath("data_folder", $("#cfg-data-dir").value.trim());
+    if (path) $("#cfg-data-dir").value = path;
+  });
+  $("#btn-move-data-dir").addEventListener("click", moveDataDir);
   addEventListener("hashchange", () => showCategory(true));
   phone.addEventListener("change", () => showCategory(false));
   showCategory(false);

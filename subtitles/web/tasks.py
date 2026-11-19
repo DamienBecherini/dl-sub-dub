@@ -4,7 +4,7 @@ translation of a project by a remote API, which moves forward on several videos 
 Two phases (see pipeline): preparation (source, audio, transcription, original subtitles), then translation and
 copies. With the `pause` option, the task stops between both (state `paused`) with a cost estimate; `resume()`
 starts the second phase, possibly with another translator or other languages.
-History (last 50 tasks, summaries) in %LOCALAPPDATA%/subtitles/history.json; the full log of each task is written
+History (last 50 tasks, summaries) in history.json of the data folder (config.user_dir); the full log of each task is written
 at its end in the working folder of the video (.work/<name>/log-<date>-<id>.txt) and read back from there for the
 tasks of previous sessions.
 

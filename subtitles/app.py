@@ -57,7 +57,7 @@ def ours(health: dict | None) -> bool:
 
 def start_service(p: int) -> bool:
     """The service without a console, detached: it outlives the window while it works."""
-    log = config.user_dir() / LOG
+    log = config.state_dir() / LOG
     log.parent.mkdir(parents=True, exist_ok=True)
     out = open(log, "a", encoding="utf-8")
     out.write(f"\n--- {time.strftime('%Y-%m-%d %H:%M:%S')} ---\n")
@@ -75,7 +75,7 @@ def start_service(p: int) -> bool:
 
 def read_geometry() -> dict:
     try:
-        g = json.loads((config.user_dir() / GEOMETRY).read_text(encoding="utf-8"))
+        g = json.loads((config.state_dir() / GEOMETRY).read_text(encoding="utf-8"))
         return {k: int(g[k]) for k in ("width", "height", "x", "y")}
     except (OSError, ValueError, KeyError, TypeError):
         return {"width": 1200, "height": 860}
@@ -83,7 +83,7 @@ def read_geometry() -> dict:
 
 def save_geometry(w):
     if w.width and w.height:
-        (config.user_dir() / GEOMETRY).write_text(json.dumps({"width": w.width, "height": w.height, "x": w.x, "y": w.y}), encoding="utf-8")
+        (config.state_dir() / GEOMETRY).write_text(json.dumps({"width": w.width, "height": w.height, "x": w.x, "y": w.y}), encoding="utf-8")
 
 
 class SingleInstance:
@@ -97,7 +97,7 @@ class SingleInstance:
             self.first = k.GetLastError() != 183            # ERROR_ALREADY_EXISTS
         else:
             import fcntl
-            path = config.user_dir() / "app.lock"
+            path = config.state_dir() / "app.lock"
             path.parent.mkdir(parents=True, exist_ok=True)
             self.handle = open(path, "w")
             try:
@@ -126,7 +126,7 @@ def open_window():
     if health and not ours(health):
         return fail(i18n.t("app.port_taken", port=p))
     if not health and not start_service(p):
-        return fail(i18n.t("app.not_started", port=p, log=config.user_dir() / LOG))
+        return fail(i18n.t("app.not_started", port=p, log=config.state_dir() / LOG))
     url = f"http://127.0.0.1:{p}/"
     try:
         import webview
@@ -140,7 +140,7 @@ def open_window():
     w = webview.create_window(TITLE, url, min_size=(400, 500), **read_geometry())
     w.events.closing += lambda: save_geometry(w)
     call(p, "/api/window", {"open": True})
-    storage = config.user_dir() / "window"
+    storage = config.state_dir() / "window"
     try:
         webview.start(private_mode=False, storage_path=str(storage), icon=str(ICONS / ("dl-sub-dub.ico" if WINDOWS else "dl-sub-dub.png")))
     except Exception:                                   # no engine for the window (Linux without GTK nor Qt): the browser

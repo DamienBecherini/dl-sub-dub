@@ -206,6 +206,8 @@ What the page shows while at work:
 
 In `config.json` in the user folder: `%LOCALAPPDATA%\subtitles` on Windows, `$XDG_CONFIG_HOME/subtitles` or `~/.config/subtitles` elsewhere. This file overrides the defaults of `subtitles/config.toml`, which only contains examples. The application (`python -m subtitles.app`) keeps its things there too: `window.json` (size and place of the window), `window/` (the storage of its page: theme, view) and `app-service.log` (the log of the service it starts).
 
+The data of the user (`config.json`, `history.json`, `speeds.json`, `last_project.json`) can live elsewhere, in a folder that is backed up for instance: Settings > Folders > "Folder of the settings and the history", "Move here". The files are copied, checked, then deleted from the old folder, and the service uses the new one at once (refused while a task or a project runs). A folder that already holds settings is never overwritten: they can be used instead. The user folder above keeps the rest (log, window, thumbnails) and `location.json`, which names the data folder (`{"data": "D:\\Data\\Subtitles"}`); without it, the data is in the user folder.
+
 The downloads (`[youtube]` table): the folder of the downloaded videos (a Windows path such as `D:/Videos` even when yt-dlp runs in WSL: the tool converts it), the maximum quality (1080p by default, with sound up to 128 kb/s), other yt-dlp options such as `--cookies-from-browser firefox`, and the yt-dlp command. Also in that table: `merge_format` (`mp4`), `retries` (10, for the passing 403 errors of YouTube), `max_audio_kbps`. Your own yt-dlp configuration file is still read (cookies, JavaScript runtime…): these settings replace only its output folder and its format.
 
 ## Command line

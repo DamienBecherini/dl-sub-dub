@@ -101,7 +101,7 @@ def thumbnail(video: Path, duration: float | None = None, run=subprocess.run) ->
     if not video.is_file():
         raise MediaError(str(video))
     name = hashlib.sha1("|".join(map(str, _key(video))).encode("utf-8")).hexdigest()[:20] + ".jpg"
-    out = config.user_dir() / "thumbnails" / name
+    out = config.state_dir() / "thumbnails" / name
     if out.is_file():
         return out
     out.parent.mkdir(parents=True, exist_ok=True)
