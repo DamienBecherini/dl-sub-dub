@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.3.2 (2026-11-20)
+
+A language the engine does not know is said before anything is spent on it, the spoken language is found among 25
+languages, a video run on its own is told by its project, the settings can live in a folder of your choice, and the
+page is tested in a real browser.
 
 - The settings, the history, the measured speeds and the last project can move to a folder of your choice (one
   that is backed up, for instance): Settings > Folders > "Folder of the settings and the history". Nothing is
