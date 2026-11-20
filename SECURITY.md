@@ -79,8 +79,11 @@ keys and your machine, where it lives in the code, and what it does not cover.
 - **To the transcription server you set**: the audio of each video. Run it at home (the recommended server runs on
   your computer or your home server); over the local network it travels as you configured it (`http://` on a LAN).
 - **To the translator you set**: the text of the subtitles. A local model keeps everything at home; an API (Claude or
-  another) receives the text, over HTTPS, under its own terms. With a paid translator, a project done step by step stops
-  before spending and shows its estimate (video by video, it does not: the page says so).
+  another) receives the text, over HTTPS, under its own terms. The AI review, when you turn it on, sends that text to
+  the model chosen for it, and the question "which language is spoken?" of a doubtful video sends about 1,500
+  characters of its transcription to the model you pick there. With a paid model, a project stops before spending and
+  shows its estimate, whatever the order of the work, unless you said not to be asked again for that project; the
+  command line does not ask (the command is the go-ahead).
 - **To the sites of the videos**: what yt-dlp asks, as when you watch them; cookies only if you added
   `--cookies-from-browser` yourself.
 - **Nothing else**: no telemetry, no account, no update check.

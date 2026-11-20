@@ -85,8 +85,11 @@ liste ce qui vous protège, vous, vos clés et votre machine, où cela se trouve
   recommandé tourne sur votre ordinateur ou votre serveur domestique) ; sur le réseau local il circule comme vous
   l'avez réglé (`http://` sur un réseau local).
 - **Vers le traducteur réglé** : le texte des sous-titres. Un modèle local garde tout chez vous ; une API (Claude ou
-  une autre) reçoit le texte, en HTTPS, selon ses propres conditions. Avec un traducteur payant, un projet mené étape
-  par étape s'arrête avant de dépenser et affiche son estimation (vidéo par vidéo, non : la page le dit).
+  une autre) reçoit le texte, en HTTPS, selon ses propres conditions. La relecture IA, quand vous l'activez, envoie ce
+  texte au modèle choisi pour elle, et la question « quelle langue est parlée ? » d'une vidéo douteuse envoie environ
+  1 500 caractères de sa transcription au modèle que vous y choisissez. Avec un modèle payant, un projet s'arrête avant
+  de dépenser et affiche son estimation, quel que soit l'ordre du travail, sauf si vous avez demandé à ne plus être
+  interrogé pour ce projet ; la ligne de commande ne demande pas (la commande vaut accord).
 - **Vers les sites des vidéos** : ce que yt-dlp demande, comme quand vous les regardez ; des cookies seulement si vous
   avez ajouté vous-même `--cookies-from-browser`.
 - **Rien d'autre** : ni télémétrie, ni compte, ni vérification de mise à jour.

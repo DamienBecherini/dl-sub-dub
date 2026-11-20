@@ -7,7 +7,6 @@ fixture `page` in conftest.py."""
 import json
 import re
 import threading
-from http.server import ThreadingHTTPServer
 from types import SimpleNamespace
 
 import pytest
@@ -41,8 +40,7 @@ def site(tmp_path, monkeypatch):
     monkeypatch.setattr(pipeline, "translate_and_copy", translate)
     g = Manager(TaskQueue(history=[]))
     monkeypatch.setattr(service, "manager", g)
-    httpd = ThreadingHTTPServer(("127.0.0.1", 0), server.Handler)
-    httpd.daemon_threads = True
+    httpd = server.Server(("127.0.0.1", 0), server.Handler)
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
 
     def project(said: str, **options):
@@ -54,13 +52,6 @@ def site(tmp_path, monkeypatch):
     g.close()
     httpd.shutdown()
     httpd.server_close()
-
-
-@pytest.fixture
-def page(site, page):
-    """The page of conftest.py, opened after the service and closed before it stops: a request still on its way when
-    the service stops would be counted as an error of the page (seen on Linux)."""
-    return page
 
 
 def opened(page, site, run):
@@ -136,8 +127,8 @@ def test_a_video_run_from_its_line_shows_its_cost_before_a_paid_model(page, site
     run = site.project(FRENCH, translator="claude", languages=["en"])           # a French video to put into English
     run_from_its_line(page, site, run)
     panel = page.locator(".translation-panel")
-    panel.wait_for()
-    assert not panel.locator(".doubts").count() and "à traduire en anglais" in panel.inner_text()
+    panel.get_by_text(re.compile("à traduire en anglais")).wait_for()          # its estimate, asked to the service
+    assert not panel.locator(".doubts").count()
     chosen = panel.locator("label.check:has(input[name='v2-translator']:checked)")
     assert re.search(r"Claude\s+≈ \d+,\d\d \$", chosen.inner_text())          # the paid model and its cost, in the panel of the project
     assert page.locator(".nav-bar .chip").inner_text() == "en attente de votre accord"

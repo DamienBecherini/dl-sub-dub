@@ -114,7 +114,9 @@ font que traduire une commande ou une requête HTTP en appels au gestionnaire.
 | `media.py`, `folder.py` | Ce que contient un fichier vidéo (ffprobe : image, pistes audio et sous-titres, l'adresse d'où il vient) et sa vignette ; les vidéos d'un dossier. |
 | `gpu.py` | La carte graphique partagée par un modèle de traduction local et le doublage : ensemble ou l'un après l'autre, et la vérification qui la mesure. |
 | `space.py`, `cleanup.py` | Place libre vérifiée avant un téléchargement ou un MKV ; nettoyage du dossier de travail. |
-| `ytdlp.py`, `language.py` | L'âge de yt-dlp et sa mise à jour à la demande ; les codes de langue. |
+| `ytdlp.py` | L'âge de yt-dlp et sa mise à jour à la demande. |
+| `language.py`, `function_words/` | Les codes et les noms de langue ; la langue d'une transcription trouvée par ses mots courants (une liste par langue, un fichier chacune ; celles de l'utilisateur dans le dossier `function_words` du dossier des réglages), si une transcription ressemble seulement à sa langue (`doubt`), la question posée à un modèle, et `python -m subtitles.language` pour mesurer un texte contre les listes. |
+| `data_location.py` | Le dossier des données de l'utilisateur (réglages, historique, vitesses, dernier projet, listes de mots courants) déplacé à l'endroit de son choix : copié, vérifié, puis supprimé ; `location.json` le nomme. |
 | `web/dlprogress.py`, `web/playlist.py`, `web/idle.py` | Les lignes de yt-dlp transformées en progression ; une playlist entière téléchargée ; l'arrêt après une heure sans activité, ou une fois la fenêtre de l'application fermée (`leave`). |
 
 ## Le modèle de projet
@@ -323,7 +325,7 @@ stateDiagram-v2
 ```
 
 Une vidéo menée seule jusqu'au bout (**Continuer**) saute les phases, tout comme une étape lancée pour une seule vidéo
-depuis les boutons de sa ligne (`run_item` : Lancer, Réessayer, Traduire quand sa traduction attend ; `cancel_item`),
+depuis les boutons de sa ligne (`run_item` : Lancer, Réessayer, l'accord quand sa traduction attend, après que la page a montré ce qu'il lance et son coût ; `cancel_item`),
 quel que soit l'état du projet. Son ▾ fait plusieurs étapes de cette vidéo l'une après l'autre (`run_chain` : la
 première tout de suite, les autres gardées dans la vidéo, `facts["then"]`, et lancées par `_follow` à la fin de chaque
 étape ; une étape déjà lancée par le projet est attendue, une erreur ou une annulation arrête la suite). « Lancer cette étape », depuis la liste, lance cette étape seule
@@ -547,8 +549,10 @@ flowchart LR
       (`site_wanted`), et ses pistes s'ajoutent de la même façon.
   - **Sous-titres** ([`subtitles.js`](../subtitles/web/static/v2/subtitles.js)) : la langue parlée et les langues de la vidéo. Les réglages de
     l'étape portent ceux du projet tels qu'ils s'appliqueront (`ProjectRun.subtitle_settings` : les moteurs choisis ou
-    ceux par défaut, la pause avant la traduction choisie ou celle par défaut du traducteur), la traduction qui attend
-    l'accord avec son estimation, et les noms à vérifier.
+    ceux par défaut, la pause avant la traduction choisie ou celle par défaut du traducteur), la relecture IA et la
+    traduction qui attendent l'accord avec leurs estimations (`TranslationPanel`, `GET …/estimate` : `waits`, `review`,
+    et `doubts`, les vidéos dont la langue est douteuse, montrées en premier), et ce que la relecture propose de
+    vérifier, noms et lignes (`NamesPanel`, `GET …/review`, `POST …/validate`).
   - **Doublage** ([`dubbing.js`](../subtitles/web/static/v2/dubbing.js)) : le moteur des réglages, ou ce qui manque pour s'en servir, et les
     choix du projet ou d'une vidéo (`ProjectRun.dubbing_settings` les donne tels qu'ils s'appliqueront) :
     - les langues doublées (`dub_language`, une liste ; par défaut toutes les langues des sous-titres sauf la langue
@@ -634,8 +638,27 @@ de la machine est remplacé (le modèle interrogé, la traduction).
 [`tests/test_page_go_ahead.py`](../tests/test_page_go_ahead.py) couvre ce qui attend l'utilisateur avant qu'un modèle
 travaille : l'avertissement de langue douteuse (interroger un modèle, annuler la vidéo, continuer, une liste de
 l'utilisateur lue tout de suite), le coût d'un modèle payant montré avant l'accord donné depuis une ligne, et Lancer
-pendant qu'une vidéo travaille seule. La page interdit `eval` (sa politique de sécurité du contenu) : attendre avec
-`expect(locator)` ; un script donné en texte (`wait_for_function`) y a été refusé.
+pendant qu'une vidéo travaille seule.
+
+Les parcours d'un utilisateur vont un cran plus loin (fixture `studio`, [`tests/page_site.py`](../tests/page_site.py)) :
+de vraies petites vidéos faites par ffmpeg, les réglages dans un vrai fichier d'un dossier temporaire (rien de
+l'utilisateur n'est lu ni écrit), et la vraie chaîne jusqu'à ses fichiers. Seul le bord est remplacé : le serveur de
+transcription (`transcription.transcribe`), le modèle (`translation.create` : il rend chaque ligne marquée, répond à la
+question de la langue, propose ce que le test lui donne pour une relecture IA), yt-dlp (`source.describe`,
+`source.download_youtube`) et le programme de doublage (`dubbing.dub`) ; l'audio est vraiment extrait, les `.srt`
+vraiment écrits à côté de la vidéo, le MKV vraiment fabriqué.
+[`tests/test_page_project.py`](../tests/test_page_project.py) porte les parcours de tous les jours (une vidéo ajoutée
+depuis la page et menée jusqu'à ses sous-titres, les vidéos cochées, Pause, Arrêter et Reprendre, une vidéo annulée,
+en échec puis réessayée, retirée, une langue ajoutée, la page en anglais et sur un téléphone), et
+[`tests/test_page_advanced.py`](../tests/test_page_advanced.py) les plus longs (les noms de la relecture IA décidés
+sur la page, un seul accord pour plusieurs vidéos avant un modèle payant, le doublage jusqu'au MKV, une adresse
+téléchargée puis sous-titrée, une vidéo menée à travers ses étapes depuis son menu, un projet retrouvé après le
+redémarrage du service, un réglage changé et enregistré).
+
+Ce que leur écriture a appris : la page interdit `eval` (sa politique de sécurité du contenu), donc attendre avec un
+localisateur, pas avec un script donné en texte (`wait_for_function`, `evaluate`) ; une case de la page est cochée par
+le service (cliquer, puis attendre le service : `page_site.until`), et un test qui attend une erreur de la page (un
+projet que le service ne connaît plus : 404) la nomme dans `page.tolerated`.
 
 ## Par où commencer la lecture
 

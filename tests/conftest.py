@@ -1,6 +1,7 @@
 """The tests check the French messages: language imposed, whatever the system's. They never touch the files of the
 user folder (history, last project, speeds): an archived task would otherwise replace the real history."""
 import os
+import re
 import time
 from pathlib import Path
 
@@ -63,18 +64,38 @@ def _browser():
         browser.close()
 
 
+@pytest.fixture(scope="session")
+def _small_media(tmp_path_factory):
+    """A real small video and a voice file, made once by ffmpeg for all the tests of the page (see page_site.py)."""
+    import page_site
+    return page_site.small_media(tmp_path_factory.mktemp("media"))
+
+
 @pytest.fixture
-def page(_browser):
+def studio(tmp_path, monkeypatch, _small_media):
+    """The real service at work on real small videos, its edge alone replaced (see page_site.py)."""
+    import page_site
+    yield from page_site.serve(tmp_path, monkeypatch, _small_media)
+
+
+@pytest.fixture
+def page(_browser, request):
     """A page of its own for each test (nothing kept from one to the next), in French, which fails the test on an
-    error of the page's code (an exception not caught, a console error)."""
+    error of the page's code (an exception not caught, a console error). It is opened after the service of the test
+    and closed before it stops: a request still on its way when the service stops would count as such an error."""
+    for service_of_the_test in ("studio", "site"):
+        if service_of_the_test in request.fixturenames:
+            request.getfixturevalue(service_of_the_test)
     context = _browser.new_context(locale="fr-FR", viewport={"width": 1100, "height": 900})
     context.set_default_timeout(10_000)
     p = context.new_page()
     errors = []
     p.on("pageerror", lambda e: errors.append(str(e)))
     p.on("console", lambda m: errors.append(f"{m.text} ({m.location.get('url', '')})") if m.type == "error" else None)
+    p.tolerated = []                     # patterns of the errors a test expects (a project the service no longer knows: 404)
     yield p
     context.close()
+    errors = [e for e in errors if not any(re.search(pattern, e) for pattern in p.tolerated)]
     assert not errors, errors
 
 

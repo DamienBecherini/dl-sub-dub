@@ -30,7 +30,12 @@
   videos that already had it and wait for their turn.
 - A cost is written the same way everywhere, on the page and in the logs, as the language writes it: "≈ 0,37 $" in
   French, "≈ $0.37" in English, and "< 0,01 $" for what costs less than a cent.
-- Tests of the page in a real browser (Playwright, `pip install ".[ui]"`), run by the CI in a job of their own.
+- Tests of the page in a real browser (Playwright, `pip install ".[ui]"`), run by the CI in a job of their own: what
+  waits for your go-ahead, then the paths of a user on real small videos, from a video added on the page to its
+  subtitles, its dubbing and its MKV.
+- On a busy machine the page could miss one of its scripts or an answer, and stay empty or stale: the service kept
+  only 5 connections waiting, where the page opens more at once. It keeps 128.
+- The go-ahead panel said "1 videos transcribed": it says "1 video(s)".
 
 ## 0.3.1 (2026-11-17)
 

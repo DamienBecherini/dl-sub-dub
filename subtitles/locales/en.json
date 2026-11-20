@@ -656,7 +656,7 @@
  "v2.sub.unknown_price": "price unknown",
  "v2.sub.waiting_title": "Translation waiting for your go-ahead",
  "v2.sub.waiting_review_title": "AI review waiting for your go-ahead",
- "v2.sub.estimate": "{videos} videos transcribed, {n} subtitles to translate into {langs}. Translator:",
+ "v2.sub.estimate": "{videos} video(s) transcribed, {n} subtitles to translate into {langs}. Translator:",
  "v2.sub.review_estimate_full": "{videos} video(s) to review: {n} subtitles, {names} name(s) never examined. Model that reviews:",
  "v2.sub.review_estimate_names": "{videos} video(s): {names} name(s) never examined to submit. Model that reviews:",
  "v2.sub.review_skip": "No review (the review is taken off the project)",

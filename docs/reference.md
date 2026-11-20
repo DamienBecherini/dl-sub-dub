@@ -50,7 +50,7 @@ flowchart TD
    - Each subtitle stays at least 1 s (or the time to read it at 17 characters/s), without running over the next one.
    - Result: `<name>.<language>.srt`, the subtitles in the spoken language (to check the timing).
 4. **Translation**, one per target language (`target_languages`, the spoken language being skipped).
-   - A spoken language not given and not recognised by its common words (French, English, German, Spanish, Italian, Portuguese, Dutch) is asked to the translator first, from a sample of the subtitles, and kept for the next pass.
+   - A spoken language not given is found from its function words ([the lists](#the-lists-of-function-words): the 25 languages of Parakeet, and yours); not recognised that way, it is asked to the translator first, from a sample of the subtitles, and kept for the next pass.
    - The text goes in batches of 25 numbered lines, with the two lines before as context.
    - The model must return the same numbers. An incomplete batch is sent again, then cut into smaller ones; as a last resort the line stays in its language, and it is reported.
    - The **timings do not change**. A text that became too long for two lines is shared between two subtitles, in proportion to the characters.
@@ -191,6 +191,7 @@ Above the list:
 - **Pause** and **Stop** take the place of the button while the project runs. Pause: the videos in progress finish, then it waits. Stop: at once; what is finished is kept, and a download keeps its partial files to resume where it stopped.
 - **Resume: …**, with its steps, comes back in its place afterwards. While a paused project finishes its videos, **Stop now** frees the processor and the graphics card at once.
 - A step can still be run while the project runs (its videos left to do join the work), and a video ticked for download starts at once.
+- **The state of the project**, next to these buttons, also tells what a video run from its line does while the project itself does not run: "in progress" while it is at work (Run then waits, **Nothing else to run**, unless something else is ticked), "waiting for your go-ahead" when it stops before a paid model or for a doubtful language. A project you paused says "paused" while its videos in progress finish.
 - Each line also has its button and its ▾, for one video alone: see [One video, one step](#one-video-one-step).
 
 What the page shows while at work:
@@ -207,7 +208,7 @@ What the page shows while at work:
 
 In `config.json` in the user folder: `%LOCALAPPDATA%\subtitles` on Windows, `$XDG_CONFIG_HOME/subtitles` or `~/.config/subtitles` elsewhere. This file overrides the defaults of `subtitles/config.toml`, which only contains examples. The application (`python -m subtitles.app`) keeps its things there too: `window.json` (size and place of the window), `window/` (the storage of its page: theme, view) and `app-service.log` (the log of the service it starts).
 
-The data of the user (`config.json`, `history.json`, `speeds.json`, `last_project.json`) can live elsewhere, in a folder that is backed up for instance: Settings > Folders > "Folder of the settings and the history", "Move here". The files are copied, checked, then deleted from the old folder, and the service uses the new one at once (refused while a task or a project runs). A folder that already holds settings is never overwritten: they can be used instead. The user folder above keeps the rest (log, window, thumbnails) and `location.json`, which names the data folder (`{"data": "D:\\Data\\Subtitles"}`); without it, the data is in the user folder.
+The data of the user (`config.json`, `history.json`, `speeds.json`, `last_project.json`, and the folder `function_words` of [your lists](#the-lists-of-function-words)) can live elsewhere, in a folder that is backed up for instance: Settings > Folders > "Folder of the settings and the history", "Move here". The files are copied, checked, then deleted from the old folder, and the service uses the new one at once (refused while a task or a project runs). A folder that already holds settings is never overwritten: they can be used instead. The user folder above keeps the rest (log, window, thumbnails) and `location.json`, which names the data folder (`{"data": "D:\\Data\\Subtitles"}`); without it, the data is in the user folder.
 
 The downloads (`[youtube]` table): the folder of the downloaded videos (a Windows path such as `D:/Videos` even when yt-dlp runs in WSL: the tool converts it), the maximum quality (1080p by default, with sound up to 128 kb/s), other yt-dlp options such as `--cookies-from-browser firefox`, and the yt-dlp command. Also in that table: `merge_format` (`mp4`), `retries` (10, for the passing 403 errors of YouTube), `max_audio_kbps`. Your own yt-dlp configuration file is still read (cookies, JavaScript runtime…): these settings replace only its output folder and its format.
 
@@ -241,6 +242,10 @@ others start again from their saved transcription. The command does not pause be
 `--until translation|dubbing|mux` (last step, the translation by default), `--new-project` (ignores the existing project
 file and lists the folder again), `--no-subfolders`. A `.project.json` file (or an older `.batch.json`) can be given
 too. Exit code: 0 if every video is done, 1 otherwise. Do not run the same project in the web page at the same time.
+
+The command is the go-ahead: nothing is asked, with or without `--stages`. A paid translator is used without a pause,
+and a video whose language is doubtful (see [AI review](#ai-review-optional)) is translated all the same, with the
+warning in what the command prints.
 
 A playlist address is downloaded into a folder named after it (in the download folder), then that folder is processed
 as a project; running the command again resumes the download, then the project. The address of one video of a playlist
@@ -295,7 +300,7 @@ The recommended server is [transcription-handy-like](https://github.com/DamienBe
 The engine does not say which language is spoken (Parakeet does not): the tool finds it from the function words of the transcription, the small frequent words of a language (articles, pronouns, conjunctions: "the, and, is, to"). The same lists say whether a transcription looks like its language at all (the doubtful language, above).
 
 - **One file a language**, `subtitles/function_words/<code>.txt` (`pl.txt`, `ru.txt`): lines that start with `#` are comments, the rest is the words, in lower case, separated by spaces or line breaks. About 25 words are enough.
-- **The lists that come with the tool** are those of the 25 languages of Parakeet: Bulgarian, Croatian, Czech, Danish, Dutch, English, Estonian, Finnish, French, German, Greek, Hungarian, Italian, Latvian, Lithuanian, Maltese, Polish, Portuguese, Romanian, Russian, Slovak, Slovenian, Spanish, Swedish, Ukrainian. Each file says what was measured for it: its words are 20 to 38 % of the words of film subtitles in its language; French, English and German were also measured on real transcriptions.
+- **The lists that come with the tool** are those of the 25 languages of Parakeet: Bulgarian, Croatian, Czech, Danish, Dutch, English, Estonian, Finnish, French, German, Greek, Hungarian, Italian, Latvian, Lithuanian, Maltese, Polish, Portuguese, Romanian, Russian, Slovak, Slovenian, Spanish, Swedish, Ukrainian. Each file says what was measured for it: its words are 20 to 38 % of the words of film subtitles in its language (word frequencies of OpenSubtitles 2018; Maltese, which has none there, on Wikipedia articles; the Ukrainian figure is too low, about a third of those subtitles being in Russian); French, English and German were also measured on real transcriptions.
 - **Your engine knows other languages** (a Whisper model: Arabic, Turkish, Japanese…)? Without their list, a video in one of them is not recognised (a model is asked, or the subtitles are named `xx`) and may be taken for a doubtful one. Add the list: a file of the same shape in the folder `function_words` of your settings folder (`%LOCALAPPDATA%\subtitles\function_words` on Windows, `~/.config/subtitles/function_words` elsewhere, or the folder chosen in Settings > Folders; it moves with the settings). It is read at once, without a restart.
 - **A list of yours replaces the one of the tool** that has the same name: copy the file of the tool, improve it, keep it in your folder. A list that works better for everyone is welcome in the repository (a pull request with the file and what you measured).
 - **Measure before you trust a list**: `python -m subtitles.language <transcription.json | subtitles.srt | text file> [code]` gives the share of each language for a text, the language found and whether it would be held as doubtful. A right list gives 15 % or more on a real transcription of its language (under 12 %, the video waits as doubtful), and clearly more than every other list on that text. Languages written without spaces between words (Japanese, Chinese, Thai) cannot be measured this way: choose the spoken language in the project instead, a language chosen without a list is not judged.

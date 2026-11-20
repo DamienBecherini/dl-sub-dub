@@ -30,7 +30,7 @@ L'outil tourne sur votre machine, avec les moteurs que vous choisissez :
 
 ![La page : chaque vidéo avec ses cases d'étapes, son état dans chacune, ses propres réglages et son journal](docs/images/fr/workshop-dark.png)
 
-**Ce que montre ce dépôt :** un paquet Python sans aucune dépendance hors de la bibliothèque standard (`dependencies = []` dans [pyproject.toml](pyproject.toml)), qui pilote FFmpeg et yt-dlp en sous-processus. La transcription arrive avec l'horodatage de chaque mot, depuis un serveur que vous faites tourner, [transcription-handy-like](https://github.com/DamienBecherini/transcription-handy-like/blob/main/README.fr.md) ou tout serveur compatible OpenAI ; la traduction passe par une IA locale, l'API Claude, Claude Code ou toute API compatible OpenAI. 574 tests pytest, où les moteurs, yt-dlp et le doublage sont simulés et où rien ne passe par le réseau, tournent avec un lint ruff à chaque push et à chaque pull request (Python 3.11 et la dernière version stable) ; six d'entre eux pilotent la page dans un vrai navigateur (Playwright).
+**Ce que montre ce dépôt :** un paquet Python sans aucune dépendance hors de la bibliothèque standard (`dependencies = []` dans [pyproject.toml](pyproject.toml)), qui pilote FFmpeg et yt-dlp en sous-processus. La transcription arrive avec l'horodatage de chaque mot, depuis un serveur que vous faites tourner, [transcription-handy-like](https://github.com/DamienBecherini/transcription-handy-like/blob/main/README.fr.md) ou tout serveur compatible OpenAI ; la traduction passe par une IA locale, l'API Claude, Claude Code ou toute API compatible OpenAI. 593 tests pytest, où les moteurs, yt-dlp et le doublage sont simulés et où rien ne passe par le réseau, tournent avec un lint ruff à chaque push et à chaque pull request (Python 3.11 et la dernière version stable) ; 23 d'entre eux pilotent la page dans un vrai navigateur (Playwright), sur de vraies petites vidéos.
 
 ## Pourquoi
 
@@ -116,6 +116,8 @@ Elles dépendent des moteurs que vous branchez, pas de l'outil :
 
 La page propose sept langues en cases à cocher (français, anglais, allemand, espagnol, italien, portugais, néerlandais) ; toute autre se tape par son code (`pl`, `ru`…).
 
+Une vidéo dans une langue que le moteur de transcription ne connaît pas sort écrite à l'oreille (de l'arabe passé par Parakeet ressemble à de l'italien approximatif). L'outil le mesure et vous prévient avant toute relecture ou traduction ([une langue douteuse](docs/reference.fr.md#relecture-ia-facultative)). Il s'appuie sur de courtes listes de mots fréquents, un fichier par langue, pour les 25 langues de Parakeet ; avec un moteur qui en connaît d'autres, [ajoutez leurs listes](docs/reference.fr.md#les-listes-de-mots-courants).
+
 ## Installation
 
 ### Avec un agent IA de code
@@ -162,7 +164,7 @@ Sous Windows, dans toutes les commandes de cette page, `.venv/bin/python` s'écr
 ### Désinstaller
 
 1. Arrêtez le service. Si vous avez créé le raccourci de l'application, enlevez-le d'abord : `.venv/bin/python -m subtitles.app --shortcut remove`. Puis supprimez le dossier d'installation (il contient l'environnement `.venv`).
-2. Supprimez le dossier des réglages : `%LOCALAPPDATA%\subtitles` sous Windows, `~/.config/subtitles` ailleurs (réglages, historique, vitesses mesurées, miniatures, taille et mémoire de la fenêtre de l'application), et le dossier des données choisi dans les Réglages si vous l'avez déplacé (voir `location.json` dans ce premier dossier).
+2. Supprimez le dossier des réglages : `%LOCALAPPDATA%\subtitles` sous Windows, `~/.config/subtitles` ailleurs (réglages, historique, vitesses mesurées, vos listes de mots courants, miniatures, taille et mémoire de la fenêtre de l'application), et le dossier des données choisi dans les Réglages si vous l'avez déplacé (voir `location.json` dans ce premier dossier).
 3. Supprimez le dossier de travail `.work` du dossier de sortie (par défaut `~/Videos/subtitles`).
 4. Dans les dossiers de vos projets, `dl-sub-dub.project.json` et `subtitles.glossary.json` peuvent partir. Les vidéos, les `.srt`, les `.vtt` et les MKV sont à vous : rien ne les supprime.
 5. Si vous aviez installé le doublage : son environnement Python, et les modèles téléchargés dans `~/.cache/huggingface/hub` (OmniVoice, environ 3 Go ; WavLM) et `~/.cache/torch/hub` (demucs).
@@ -293,8 +295,8 @@ Pour Claude Desktop, la même commande dans `claude_desktop_config.json` (`"comm
 Outils : `service_status`, `list_projects`, `project_status` (chaque vidéo, l'état de chaque étape, l'estimation d'une
 traduction payante qui attend), `new_project` (adresses, fichiers, dossiers, listes `.txt` ; pas lancé sauf demande),
 `add_videos`, `open_project`, `run_project`, `run_video` (les étapes d'une vidéo l'une après l'autre), `cancel_video`,
-`approve_translation`, `pause_project`. Une traduction payante s'arrête toujours pour montrer son coût : l'assistant
-doit vous demander avant `approve_translation`. **Seulement pour des vidéos, et des voix, que vous avez le droit
+`approve_translation`, `pause_project`. Une traduction payante s'arrête toujours pour montrer son coût, et une vidéo
+dont la langue est douteuse attend aussi : l'assistant doit vous demander avant `approve_translation`. **Seulement pour des vidéos, et des voix, que vous avez le droit
 d'utiliser.**
 
 L'assistant peut aussi relire lui-même une vidéo (« relis l'épisode 3 et corrige ce qui a été mal entendu », « la
@@ -324,7 +326,7 @@ pas d'authentification : elle n'écoute que sur la machine elle-même, et refuse
 | `GET /api/projects`, `GET /api/projects/<id>`, `GET /api/projects/<id>/events` | les projets ouverts ; le résumé de l'un (`state`, `phase`, `step` de la vidéo en cours, comptes, temps restant, chaque vidéo avec ses étapes et ce qu'on peut en faire), ou le même envoyé à chaque changement (Server-Sent Events) |
 | `POST /api/projects/load` `{file}` puis `POST /api/projects/<id>/resume` | reprendre d'après un `dl-sub-dub.project.json` (ou un ancien `subtitles.batch.json`) |
 | `POST /api/projects/<id>/suspend`, `stop`, `cancel`, `translate` | piloter un projet (`suspend` : après la vidéo en cours ; `stop` : tout de suite, la vidéo revient dans la liste ; `translate` `{translator?, languages?, review?, review_engine?}` : l'accord pour la relecture IA et la traduction qui attendent) |
-| `GET /api/projects/<id>/estimate`, `GET /api/projects/<id>/review`, `POST /api/projects/<id>/validate` `{decisions?, lines?}` | ce que coûteraient les vidéos qui attendent (relecture IA, traduction) ; ce que la relecture IA propose (noms, lignes de chaque vidéo) ; vos décisions |
+| `GET /api/projects/<id>/estimate`, `GET /api/projects/<id>/review`, `POST /api/projects/<id>/validate` `{decisions?, lines?}` | ce que coûteraient les vidéos qui attendent (relecture IA, traduction) et celles dont la langue est douteuse (`doubts`) ; ce que la relecture IA propose (noms, lignes de chaque vidéo) ; vos décisions |
 | `POST /api/projects/<id>/location` `{title?, base?, named?}` | renommer le projet ; le déplacer tant que rien n'a commencé |
 | `POST /api/projects/<id>/start` `{stages?, only?}` (sans `stages` : les étapes cochées), `/select`, `/settings`, `/items/<item>/run` `{stage}` (ou `{stages}` : l'une après l'autre), `/items/<item>/cancel` | lancer des étapes, cocher, réglages, une vidéo une étape (ou plusieurs à la suite) |
 | `GET /api/projects/<id>/items/<item>/log` | le journal du téléchargement d'une vidéo |
@@ -337,7 +339,8 @@ curl -s localhost:4420/api/projects/<id>
 
 ## Bon à savoir
 
-- **Le coût avant la dépense.** Avec un traducteur payant, le projet s'arrête après la transcription et affiche les jetons et le prix par modèle. Le doublage ne lance jamais une traduction de lui-même.
+- **Le coût avant la dépense.** Avec un traducteur payant, le projet s'arrête après la transcription et affiche les jetons et le prix par modèle ; une vidéo lancée seule depuis sa ligne s'arrête de la même façon, et son bouton montre d'abord son coût. Le doublage ne lance jamais une traduction de lui-même.
+- **Une langue que le moteur ne connaît pas.** Quand une transcription ressemble peu à sa langue, la vidéo attend avec un avertissement avant toute relecture ou traduction, même gratuite : vous l'annulez, vous demandez à un modèle quelle langue il entend, ou vous continuez quand même.
 - **Rien n'est refait.** Une étape dont le résultat existe sur le disque est sautée. Un projet reprend après une coupure, un téléchargement arrêté reprend où il en était, un doublage arrêté garde les phrases déjà faites, et changer une langue ou la mise en forme ne retranscrit pas.
 - **Deux ordres de travail.** Étape par étape (toutes les vidéos passent une étape, puis la suivante : le coût de toutes les traductions avant d'en payer une) ou vidéo par vidéo (une première vidéo finie plus tôt).
 - **Vos retouches sont gardées.** Un `.srt` modifié à la main n'est pas écrasé ; le doublage et le MKV utilisent votre version.
@@ -358,6 +361,7 @@ curl -s localhost:4420/api/projects/<id>
 | **Tester** échoue pour la transcription | Le serveur est-il lancé, à la bonne adresse ? Un serveur qui ne renvoie que des segments, sans les mots horodatés, est refusé. |
 | Un téléchargement YouTube échoue | Mettez yt-dlp à jour (la page le propose quand il est ancien) et vérifiez son moteur JavaScript (Deno, ou Node 22 ou plus). |
 | Une vidéo demande un compte | Ajoutez `--cookies-from-browser firefox` (ou votre navigateur) dans **Réglages › Téléchargements**. |
+| « Langue douteuse » sur une vidéo | Le moteur de transcription ne connaît probablement pas la langue parlée (Parakeet : 25 langues européennes) et l'a écrite à l'oreille : annulez la vidéo, ou prenez un moteur qui connaît cette langue. Si votre moteur la connaît, c'est sa [liste de mots courants](docs/reference.fr.md#les-listes-de-mots-courants) qui manque. |
 | Un sous-titre apparaît alors que personne ne parle | Le modèle de transcription a « entendu » des mots dans un bruit, une foule ou une musique. Supprimez ce sous-titre dans le `.srt` de chaque langue : vos retouches sont gardées, et un nouveau doublage ne le dira plus. |
 | Le doublage manque de mémoire, ou devient très lent | Choisissez « Une IA à la fois » (réglages du projet, Carte graphique), ou lancez **Vérifier la carte graphique**. |
 | transcription-handy-like sans Docker sous Windows : `WinError 4551` | Le contrôle intelligent des applications bloque ses bibliothèques : utilisez Docker. |
@@ -381,6 +385,7 @@ curl -s localhost:4420/api/projects/<id>
 .venv/bin/pip install -e ".[dev,claude]"
 .venv/bin/pytest -q
 .venv/bin/ruff check .
+.venv/bin/pip install -e ".[ui]"          # facultatif : les tests de la page dans un vrai navigateur (Playwright), sautés sans lui
 ```
 
 ## Licence

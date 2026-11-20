@@ -147,13 +147,21 @@ def _watch_idle(server):
             return
 
 
+class Server(ThreadingHTTPServer):
+    """One thread a request, none of which holds the stop of the service. The page asks for its files and its data
+    all at once, each on a connection of its own (HTTP/1.0): the queue of the connections not accepted yet is long
+    enough for them. With the default of 5, a busy machine refused those that did not fit, and the page missed a
+    script or an answer (seen by the tests of the page: ERR_CONNECTION_REFUSED on its scripts)."""
+    daemon_threads = True
+    request_queue_size = 128
+
+
 def serve(port: int, idle_min: float | None = None):
     if idle_min is not None:
         service.imposed_timeout = idle_min * 60
     service.idle.touch()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", stream=sys.stdout)
-    server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
-    server.daemon_threads = True
+    server = Server(("127.0.0.1", port), Handler)
     try:
         cfg = config.load()
         i18n.set_language(cfg.get("ui_language"))

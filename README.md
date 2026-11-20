@@ -30,7 +30,7 @@ The tool runs on your machine, with the engines you choose:
 
 ![The page: each video with its boxes for the steps, its state in each one, its own settings and its log](docs/images/en/workshop-dark.png)
 
-**What this repository shows:** a Python package with no runtime dependency outside the standard library (`dependencies = []` in [pyproject.toml](pyproject.toml)), which drives FFmpeg and yt-dlp as subprocesses. The transcription comes with word timestamps from a server you run, [transcription-handy-like](https://github.com/DamienBecherini/transcription-handy-like) or any OpenAI-compatible one; the translation goes through a local LLM, the Claude API, Claude Code or any OpenAI-compatible API. 574 pytest tests, in which the engines, yt-dlp and the dubbing worker are fakes and nothing goes on the network, run with a ruff lint on every push and pull request (Python 3.11 and the latest stable release); six of them drive the page in a real browser (Playwright).
+**What this repository shows:** a Python package with no runtime dependency outside the standard library (`dependencies = []` in [pyproject.toml](pyproject.toml)), which drives FFmpeg and yt-dlp as subprocesses. The transcription comes with word timestamps from a server you run, [transcription-handy-like](https://github.com/DamienBecherini/transcription-handy-like) or any OpenAI-compatible one; the translation goes through a local LLM, the Claude API, Claude Code or any OpenAI-compatible API. 593 pytest tests, in which the engines, yt-dlp and the dubbing worker are fakes and nothing goes on the network, run with a ruff lint on every push and pull request (Python 3.11 and the latest stable release); 23 of them drive the page in a real browser (Playwright), on real small videos.
 
 ## Why
 
@@ -116,6 +116,8 @@ They depend on the engines you connect, not on the tool:
 
 The page offers seven languages as boxes (French, English, German, Spanish, Italian, Portuguese, Dutch); any other is typed by its code (`pl`, `ru`…).
 
+A video in a language the transcription engine does not know comes out written by ear (Arabic through Parakeet reads like broken Italian). The tool measures it and warns you before anything is reviewed or translated ([a doubtful language](docs/reference.md#ai-review-optional)). It does so with short lists of frequent words, one file a language, for the 25 languages of Parakeet; with an engine that knows others, [add their lists](docs/reference.md#the-lists-of-function-words).
+
 ## Install
 
 ### With an AI coding agent
@@ -161,7 +163,7 @@ On Windows, in every command of this page, `.venv/bin/python` is written `.venv/
 ### Uninstall
 
 1. Stop the service. If you created the shortcut of the application, remove it first: `.venv/bin/python -m subtitles.app --shortcut remove`. Then delete the install folder (it holds the `.venv` environment).
-2. Delete the settings folder: `%LOCALAPPDATA%\subtitles` on Windows, `~/.config/subtitles` elsewhere (settings, history, measured speeds, thumbnails, the size and storage of the window of the application), and the data folder chosen in Settings if you moved it (see `location.json` in that first folder).
+2. Delete the settings folder: `%LOCALAPPDATA%\subtitles` on Windows, `~/.config/subtitles` elsewhere (settings, history, measured speeds, your lists of function words, thumbnails, the size and storage of the window of the application), and the data folder chosen in Settings if you moved it (see `location.json` in that first folder).
 3. Delete the working folder `.work` of the output folder (by default `~/Videos/subtitles`).
 4. In the folders of your projects, `dl-sub-dub.project.json` and `subtitles.glossary.json` can go. The videos, the `.srt`, the `.vtt` and the MKV are yours: nothing deletes them.
 5. If you had installed the dubbing: its Python environment, and the models downloaded into `~/.cache/huggingface/hub` (OmniVoice, about 3 GB; WavLM) and `~/.cache/torch/hub` (demucs).
@@ -292,8 +294,9 @@ For Claude Desktop, the same command in `claude_desktop_config.json` (`"command"
 Tools: `service_status`, `list_projects`, `project_status` (each video, the state of each step, the estimate of a paid
 translation waiting), `new_project` (addresses, files, folders, `.txt` lists; not started unless asked), `add_videos`,
 `open_project`, `run_project`, `run_video` (steps of one video one after the other), `cancel_video`,
-`approve_translation`, `pause_project`. A paid translation still stops to show its cost: the assistant is told to ask
-you before `approve_translation`. **Only for videos, and voices, you have the right to use.**
+`approve_translation`, `pause_project`. A paid translation still stops to show its cost, and a video whose language
+is doubtful waits too: the assistant is told to ask you before `approve_translation`. **Only for videos, and voices,
+you have the right to use.**
 
 The assistant can also review a video itself (*"read episode 3 again and fix what was heard wrong"*, *"does the English
 translation hold up?"*): `get_subtitles` gives it the subtitles of a video, numbered, in the spoken language or a
@@ -321,7 +324,7 @@ The web page uses a local JSON API on `http://127.0.0.1:4420`, which scripts can
 | `GET /api/projects`, `GET /api/projects/<id>`, `GET /api/projects/<id>/events` | the open projects; the summary of one (`state`, `phase`, `step` of the running video, counts, time left, each video with its steps and what can be done with it), or the same pushed at each change (Server-Sent Events) |
 | `POST /api/projects/load` `{file}` then `POST /api/projects/<id>/resume` | resume from a `dl-sub-dub.project.json` (or an older `subtitles.batch.json`) |
 | `POST /api/projects/<id>/suspend`, `stop`, `cancel`, `translate` | control a project (`suspend`: after the running video; `stop`: now, the video goes back to the list; `translate` `{translator?, languages?, review?, review_engine?}`: the go-ahead for the AI review and the translation that wait) |
-| `GET /api/projects/<id>/estimate`, `GET /api/projects/<id>/review`, `POST /api/projects/<id>/validate` `{decisions?, lines?}` | what the videos that wait would cost (AI review, translation); what the AI review proposes (names, lines of each video); your decisions |
+| `GET /api/projects/<id>/estimate`, `GET /api/projects/<id>/review`, `POST /api/projects/<id>/validate` `{decisions?, lines?}` | what the videos that wait would cost (AI review, translation) and those whose language is doubtful (`doubts`); what the AI review proposes (names, lines of each video); your decisions |
 | `POST /api/projects/<id>/location` `{title?, base?, named?}` | rename the project; move it while nothing has started |
 | `POST /api/projects/<id>/start` `{stages?, only?}` (without `stages`: the steps ticked), `/select`, `/settings`, `/items/<item>/run` `{stage}` (or `{stages}`: one after the other), `/items/<item>/cancel` | run steps, tick, settings, one video one step (or several in a row) |
 | `GET /api/projects/<id>/items/<item>/log` | the log of the download of a video |
@@ -334,7 +337,8 @@ curl -s localhost:4420/api/projects/<id>
 
 ## Good to know
 
-- **Cost before spending.** With a paid translator, the project stops after the transcription and shows the tokens and the price for each model. The dubbing never starts a translation by itself.
+- **Cost before spending.** With a paid translator, the project stops after the transcription and shows the tokens and the price for each model; a video run on its own from its line stops the same way, and its button shows its cost first. The dubbing never starts a translation by itself.
+- **A language the engine does not know.** When a transcription looks little like its language, the video waits with a warning before any review or translation, even free: you cancel it, ask a model which language it hears, or go on anyway.
 - **Nothing is done twice.** A step whose result is on the disk is skipped. A project resumes after an interruption, a stopped download resumes where it was, a stopped dubbing keeps the sentences it already made, and changing a language or the layout does not transcribe again.
 - **Two orders of work.** Step by step (every video through one step, then the next: the cost of every translation before any is paid) or video by video (a first video finished sooner).
 - **Your edits are kept.** A `.srt` edited by hand is not overwritten; the dubbing and the MKV use your version.
@@ -355,6 +359,7 @@ curl -s localhost:4420/api/projects/<id>
 | **Test** fails for the transcription | Is the server running, at the right address? A server that returns only segments, without word timestamps, is refused. |
 | A YouTube download fails | Update yt-dlp (the page offers it when it is old) and check its JavaScript runtime (Deno, or Node 22 or later). |
 | A video needs an account | Add `--cookies-from-browser firefox` (or your browser) in **Settings › Downloads**. |
+| "Doubtful language" on a video | The transcription engine probably does not know the language spoken (Parakeet: 25 European languages) and wrote it by ear: cancel the video, or use an engine that knows that language. If your engine does know it, its [list of function words](docs/reference.md#the-lists-of-function-words) is missing. |
 | A subtitle shows while nobody speaks | The transcription model "heard" words in a noise, a crowd or music. Delete that subtitle in the `.srt` of each language: your edits are kept, and a new dubbing will no longer say it. |
 | The dubbing runs out of memory, or becomes very slow | Choose "One AI at a time" (settings of the project, Graphics card), or run **Check the graphics card**. |
 | transcription-handy-like without Docker on Windows: `WinError 4551` | Smart App Control blocks its libraries: use Docker. |
@@ -378,6 +383,7 @@ curl -s localhost:4420/api/projects/<id>
 .venv/bin/pip install -e ".[dev,claude]"
 .venv/bin/pytest -q
 .venv/bin/ruff check .
+.venv/bin/pip install -e ".[ui]"          # optional: the tests of the page in a real browser (Playwright), skipped without it
 ```
 
 ## License

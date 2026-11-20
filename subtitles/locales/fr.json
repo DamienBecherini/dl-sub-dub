@@ -656,7 +656,7 @@
  "v2.sub.unknown_price": "prix inconnu",
  "v2.sub.waiting_title": "Traduction en attente de votre accord",
  "v2.sub.waiting_review_title": "Relecture IA en attente de votre accord",
- "v2.sub.estimate": "{videos} vidéos transcrites, {n} sous-titres à traduire en {langs}. Traducteur :",
+ "v2.sub.estimate": "{videos} vidéo(s) transcrite(s), {n} sous-titres à traduire en {langs}. Traducteur :",
  "v2.sub.review_estimate_full": "{videos} vidéo(s) à relire : {n} sous-titres, {names} nom(s) jamais examinés. Modèle de relecture :",
  "v2.sub.review_estimate_names": "{videos} vidéo(s) : {names} nom(s) jamais examinés à soumettre. Modèle de relecture :",
  "v2.sub.review_skip": "Ne pas relire (la relecture est retirée du projet)",

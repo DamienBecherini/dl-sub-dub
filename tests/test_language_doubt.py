@@ -4,7 +4,7 @@ is reviewed or translated; a model can be asked which language it hears."""
 import json
 
 from helpers import Run, update
-from subtitles import config, language, pipeline, translation
+from subtitles import config, folder_cli, language, pipeline, translation
 from subtitles.states import TaskState
 from subtitles.web.manager import Manager
 from subtitles.web.tasks import TaskQueue
@@ -179,3 +179,18 @@ def test_the_estimate_of_a_project_names_its_doubtful_videos(monkeypatch, tmp_pa
     run.items()[0].selected = False
     e = g.projects.estimate("L", ["fr"])
     assert e["doubts"] == [] and "opinion_models" not in e
+
+
+def test_the_command_line_says_it_and_goes_on(monkeypatch, tmp_path, capsys):
+    """Nobody to ask on the command line: the folder is a project, its doubtful video stops, and the command, which
+    is the go-ahead, makes it go on at once. The warning is in what it prints."""
+    folder = tmp_path / "videos"
+    folder.mkdir()
+    a_video(folder, text(BY_EAR))
+    q, translated = a_queue(monkeypatch, folder, [LOCAL], Model())
+    g = Manager(q)
+    try:
+        assert folder_cli.run(str(folder), config.load(), lambda line: None, languages=["fr"], manager=g) == 0
+    finally:
+        g.close()
+    assert translated == ["it"] and "langue douteuse" in capsys.readouterr().out

@@ -43,6 +43,22 @@ def js(url, method="GET", body=None, raw=None, headers=None):
     return code, json.loads(data)
 
 
+def test_the_connections_of_a_page_wait_for_their_turn():
+    """The page asks for its files and its data all at once, each on its own connection: a server that is busy for a
+    moment (here, one that accepts nothing) must keep them waiting, not refuse them."""
+    import socket
+    httpd = server.Server(("127.0.0.1", 0), server.Handler)            # listening, never accepting
+    opened = []
+    try:
+        for _ in range(40):
+            opened.append(socket.create_connection(httpd.server_address, timeout=2))
+    finally:
+        for s in opened:
+            s.close()
+        httpd.server_close()
+    assert len(opened) == 40
+
+
 def test_page_static_files_and_catalogs(base):
     url, _ = base
     code, ctype, body = call(url + "/")

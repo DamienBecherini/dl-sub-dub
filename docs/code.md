@@ -112,7 +112,9 @@ the manager.
 | `media.py`, `folder.py` | What a video file holds (ffprobe: picture, audio and subtitle tracks, the address it came from) and its thumbnail; the videos of a folder. |
 | `gpu.py` | The graphics card shared by a local translation model and the dubbing: together or one at a time, and the check that measures it. |
 | `space.py`, `cleanup.py` | Free space checked before a download or an MKV; the working folder cleaned. |
-| `ytdlp.py`, `language.py` | The age of yt-dlp and its update on request; language codes. |
+| `ytdlp.py` | The age of yt-dlp and its update on request. |
+| `language.py`, `function_words/` | Language codes and names; the language of a transcription found from its function words (one list a language, a file each; the user's own in the folder `function_words` of the settings folder), whether a transcription looks like its language at all (`doubt`), the question asked to a model, and `python -m subtitles.language` to measure a text against the lists. |
+| `data_location.py` | The folder of the user's data (settings, history, speeds, last project, lists of function words) moved to a place of their choice: copied, checked, then deleted; `location.json` names it. |
 | `web/dlprogress.py`, `web/playlist.py`, `web/idle.py` | The lines of yt-dlp turned into progress; a whole playlist downloaded; the stop after an hour without activity, or once the window of the application closes (`leave`). |
 
 ## The project model
@@ -317,7 +319,7 @@ stateDiagram-v2
 ```
 
 A video taken to the end on its own (**Continue**) skips the phases, and so does one step run for one video from
-the buttons of its line (`run_item`: Run, Retry, Translate when its translation waits; `cancel_item`), whatever the
+the buttons of its line (`run_item`: Run, Retry, the go-ahead when its translation waits, after the page showed what it starts and its cost; `cancel_item`), whatever the
 state of the project. Its ▾ runs several steps of that video one after the other (`run_chain`: the first now, the
 others kept in the video, `facts["then"]`, and started by `_follow` as each step ends; one the project started
 already is waited for, an error or a cancellation ends the chain). "Run this step", from the list, runs that step alone (`ProjectRun.active`). Video by video (setting `order`, `ProjectRun.by_video`), phase 1
@@ -536,7 +538,7 @@ flowchart LR
     settings of the step hold those of the project as they will apply (`ProjectRun.subtitle_settings`: the engines
     chosen or the default ones, the pause before the translation chosen or the translator's default), the AI review and
     the translation waiting for the go-ahead with their estimates (`TranslationPanel`, `GET …/estimate`: `waits`,
-    `review`), and what the review proposes to check, names and lines (`NamesPanel`, `GET …/review`, `POST …/validate`).
+    `review`, and `doubts`, the videos whose language is doubtful, shown first), and what the review proposes to check, names and lines (`NamesPanel`, `GET …/review`, `POST …/validate`).
   - **Dubbing** ([`dubbing.js`](../subtitles/web/static/v2/dubbing.js)): the engine of the settings, or what is missing to use it, and the
     choices of the project or of one video (`ProjectRun.dubbing_settings` gives them as they will apply):
     - the dubbed languages (`dub_language`, a list; by default every language of the subtitles but the spoken one,
@@ -619,8 +621,27 @@ ones, on a transcription kept on the disk; only what leaves the machine is repla
 translation). [`tests/test_page_go_ahead.py`](../tests/test_page_go_ahead.py) covers what waits for the user before
 a model works: the warning of a doubtful language (asking a model, cancelling the video, going on, a list of the
 user read at once), the cost of a paid model shown before the go-ahead of a line, and Run while a video works on its
-own. The page forbids `eval` (its Content Security Policy): wait with `expect(locator)`; a script given as text
-(`wait_for_function`) was refused there.
+own.
+
+The paths of a user go one step further (fixture `studio`, [`tests/page_site.py`](../tests/page_site.py)): real
+small videos made by ffmpeg, the settings in a real file of a temporary folder (nothing of the user is read or
+written), and the real pipeline up to its files. Only the edge is replaced: the transcription server
+(`transcription.transcribe`), the model (`translation.create`: it gives each line back marked, answers the question of
+the language, proposes what the test gives it for an AI review), yt-dlp (`source.describe`,
+`source.download_youtube`) and the dubbing program (`dubbing.dub`); the audio is really extracted, the `.srt` really
+written next to the video, the MKV really made.
+[`tests/test_page_project.py`](../tests/test_page_project.py) holds the everyday paths (a video added from the page
+and run to its subtitles, the videos ticked, Pause, Stop and Resume, a video cancelled, failed and tried again,
+removed, a language added, the page in English and on a phone), and
+[`tests/test_page_advanced.py`](../tests/test_page_advanced.py) the longer ones (the names of the AI review decided on
+the page, one go-ahead for several videos before a paid model, the dubbing up to the MKV, an address downloaded then
+subtitled, one video taken through its steps from its menu, a project found again after the service restarted, a
+setting changed and saved).
+
+What writing them taught: the page forbids `eval` (its Content Security Policy), so wait with a locator, not with a
+script given as text (`wait_for_function`, `evaluate`); a box of the page is ticked by the service (click it, then
+wait for the service: `page_site.until`), and a test that expects an error of the page (a project the service no
+longer knows: 404) names it in `page.tolerated`.
 
 ## Where to look first
 
