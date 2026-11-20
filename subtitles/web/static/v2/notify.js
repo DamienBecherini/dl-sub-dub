@@ -61,7 +61,7 @@ export function changes(before, p) {
     out.push([T("v2.notify.error_title", { step: T("v2.step." + step) }), (i?.title || i?.source || "") + " · " + name, "error-" + key]);
   }
   const working = (q) => q.rules.working;
-  if (p.state === "awaiting_translation" && before.state !== "awaiting_translation") out.push([T("v2.notify.waiting_title"), name, "wait-" + p.id]);
+  if (p.rules.go_ahead && !before.rules.go_ahead) out.push([T("v2.notify.waiting_title"), name, "wait-" + p.id]);   // a video run on its own too
   else if (working(before) && !working(p) && stateKey(p) === "done") out.push([T("v2.notify.done_title"), name, "done-" + p.id]);
   return out;
 }

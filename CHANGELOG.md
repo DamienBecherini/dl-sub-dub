@@ -6,6 +6,31 @@
   that is backed up, for instance): Settings > Folders > "Folder of the settings and the history". Nothing is
   overwritten, the service uses the new folder at once, and `%LOCALAPPDATA%\subtitles` keeps only what belongs to
   the machine (log, window, thumbnails) and `location.json`, which names that folder.
+- A doubtful language is said before anything is spent on it. When few words of a transcription are function words
+  of its language (under 12 %, when a right one has 15 % or more: measured on 286 real transcriptions), the engine
+  probably does not know the language spoken and wrote it by ear: the video of a project waits, even before free
+  models, and the go-ahead panel shows the measure with "Cancel this video", a model to ask which language it hears
+  (`POST /api/tasks/<id>/language`), or going on anyway. Before, a video in Arabic transcribed by an engine for
+  European languages was found "Italian", reviewed and translated as such.
+- The spoken language is found among the 25 languages of Parakeet (7 before): the lists of function words are now
+  files, one a language (`subtitles/function_words/<code>.txt`), each with what was measured for it. You add a
+  language or replace a list with a file of the same shape in the folder `function_words` of your settings folder,
+  read at once: an engine that knows other languages needs their lists. `python -m subtitles.language <file> [code]`
+  measures a text against the lists (reference, "The lists of function words").
+- A video run on its own, from its line, in a project that does not run (finished, paused, never run), is now told
+  by the project too. While it is at work, Run waits ("Nothing else to run") instead of offering the step already
+  running, and a finished project says "in progress". When it stops before a paid model, the go-ahead panel with the
+  estimated cost is shown above the list as for a whole project (before, only the log of the video said it), the
+  project says "waiting for your go-ahead", a notification is sent, and "See the request" in the bottom bar brings the
+  panel into sight.
+- The button of a line that waits ("Give the go-ahead…", formerly "Translate") first shows what it starts and what
+  it costs for that video, and asks: a paid model no longer starts from a click that did not show its cost.
+- A project paused or never run says "in progress" too while a video run from its line is at work (it said
+  "paused"). A project paused while it translates stays "paused": it no longer shows the go-ahead again for the
+  videos that already had it and wait for their turn.
+- A cost is written the same way everywhere, on the page and in the logs, as the language writes it: "≈ 0,37 $" in
+  French, "≈ $0.37" in English, and "< 0,01 $" for what costs less than a cent.
+- Tests of the page in a real browser (Playwright, `pip install ".[ui]"`), run by the CI in a job of their own.
 
 ## 0.3.1 (2026-11-17)
 

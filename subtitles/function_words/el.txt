@@ -1,0 +1,3 @@
+# Ελληνικά (Greek): its function words (see language.py; how to add or improve a list: docs/reference.md).
+# Measured 20/11/2026: 32 % of the words of film subtitles (OpenSubtitles 2018).
+και το να η ο δεν είναι που με τα σε για θα τι την της του από μου ένα αυτό στο σου οι

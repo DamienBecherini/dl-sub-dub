@@ -349,15 +349,26 @@ nothing named nor checked. The queue knows nothing of projects: it tells what ha
 moves forward), which the orchestrator implements to report the events to the steps of the item (`Item.apply`) and
 rewrite the project file. A lone video (`POST /api/tasks`) is a task with nobody listening (`NoEvents`).
 
-A task stops between the transcription and the translation (`paused`, `Task.waits` says for what), three times at
-most and each only once (`TaskQueue._pauses_after_preparation`): before an AI review by a paid model (`review`:
+A task stops between the transcription and the translation (`paused`, `Task.waits` says for what), four times at
+most and each only once (`TaskQueue._pauses_after_preparation`): when its transcription looks little like its
+language (`language`, for the video of a project: `language.doubt` measures the share of the function words of that
+language, kept in `Prepared.doubt`; the lists are files, `subtitles/function_words/<code>.txt` and the user's own in
+`language.USER_LISTS`, read again when they change: `language.word_sets`; an engine that does not know the language spoken writes it by ear, and a review
+or a translation of it would be lost, even free; `TaskQueue.language_opinion` asks a model which language it hears),
+before an AI review by a paid model (`review`:
 its estimate, `estimation.review`), when the review proposes names or lines to decide (`validation`, for the tasks
 asked to wait for them: `check_names`, set for every video of a project), before a paid translation
 (`translation`, unless the task was already resumed: the estimate of the translation is shown at every pause).
 `resume` starts its next pass, possibly with another translator, another model for the review, or none. A decision
 that changes the subtitles (a name, a line: `TaskQueue._seen`) makes the next pass cut them again. In a project, a
 video paused again after the go-ahead waits for the next one (`ProjectRun.held`), and the project goes back to
-`awaiting_translation`.
+`awaiting_translation`. A video run on its own (the button of its line) in a project that does not run pauses the
+same way without changing the state of the run: `rules.asks` (sent as `rules.go_ahead`) says the go-ahead is asked
+then too, the page shows the same panel, and `Orchestrator.translate` resumes the videos that wait, the project
+staying as it is. Two sets of the run keep apart what looks alike in a project that does not run: `agreed`, the
+videos that had the go-ahead and wait for their turn to be translated (a project paused meanwhile asks nothing
+more), and `finishing`, the videos at work when the project was paused "after the running videos" (it says
+"paused" while they end, whereas a video run on its own makes it say "running": `rules.alone`).
 
 ### Downloads
 
@@ -594,6 +605,22 @@ file would have it: the test starts from there, the code under test then reports
 the service in one place: `service.manager` (the work behind the routes), `observed.measure_durations` (no ffprobe),
 `background.spawn` (the work in the background run by hand, or not at all), `last_project.FILE`. Each failure is also written with its date to `tests/failures.log`,
 so that a test that fails once in a while leaves a trace.
+
+**The page in a real browser.** The tests named `tests/test_page_*.py` open the page with
+[Playwright](https://playwright.dev/python/) and click as a user does: `pip install ".[ui]"`, then `pytest` as usual.
+They use the browser Playwright installed (`playwright install chromium`) or, without it, the Chrome or the Edge of
+the machine; without Playwright or without any browser they are skipped, and the rest of the suite needs neither. The
+CI runs them in a job of its own (`page`), with `PAGE_TESTS=required`: there, a missing Playwright or browser fails
+the tests instead of skipping them. The fixture `page` of `tests/conftest.py` gives a page of its own to
+each test, in French, and fails the test on an error of the page's code (an exception, a console error): the page is
+opened after the service of the test and closed before it stops, otherwise a request still on its way counts as one. The service
+behind works for real, on a port of its own: its queue runs the tasks, its scheduler and its routes are the real
+ones, on a transcription kept on the disk; only what leaves the machine is replaced (the model asked, the
+translation). [`tests/test_page_go_ahead.py`](../tests/test_page_go_ahead.py) covers what waits for the user before
+a model works: the warning of a doubtful language (asking a model, cancelling the video, going on, a list of the
+user read at once), the cost of a paid model shown before the go-ahead of a line, and Run while a video works on its
+own. The page forbids `eval` (its Content Security Policy): wait with `expect(locator)`; a script given as text
+(`wait_for_function`) was refused there.
 
 ## Where to look first
 

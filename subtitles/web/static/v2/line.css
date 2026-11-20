@@ -92,6 +92,14 @@
   .lines-all { margin: 6px 0 0; display: flex; gap: 14px; font-size: 13px; }
 }
 .translation-panel .no-more { font-size: 14px; }
+/* A video whose language is doubtful: said first in the panel, with what can be done about it. */
+.translation-panel .doubts { display: grid; gap: 8px; padding: 10px 12px; border-left: 4px solid var(--attention); border-radius: 6px; background: var(--drop);
+  h4 { margin: 0; font-size: 14px; color: var(--attention-border); }
+  p { margin: 0; }
+  .doubt { display: grid; gap: 6px; }
+  .opinion { font-weight: 600; }
+  .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+}
 .names-panel .first-step { margin: 0; font-weight: 600; color: var(--attention-border); }      /* decided before the go-ahead */
 .names-panel .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 table.lines {

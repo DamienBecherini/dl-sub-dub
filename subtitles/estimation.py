@@ -113,6 +113,38 @@ def review(cfg: dict, mode: str, line_count: int, name_count: int) -> dict:
     return e
 
 
+LANGUAGE_QUESTION_TOKENS = (500, 5)            # language.ask: 1500 characters of subtitles and the question; a code
+
+
+def language_question(cfg: dict) -> list[dict]:
+    """What asking a model for the language of a video takes (language.ask, one short request), for each translator
+    that can answer: its cost (Claude API), the tokens of the subscription (Claude Code); free with a local model."""
+    r = settings(cfg)
+    tokens_in, tokens_out = LANGUAGE_QUESTION_TOKENS
+    out = []
+    for m in cfg.get("translators", []):
+        kind = m.get("type", "openai")
+        if kind not in ("claude", "claude_code", "openai"):
+            continue
+        t = {"id": m.get("id"), "name": config.engine_name(m), "type": kind, "model": m.get("model", "")}
+        if kind == "claude":
+            t["cost_usd"] = cost_usd(cfg, t["model"], tokens_in, tokens_out)
+        elif kind == "claude_code":
+            t.update(cost_usd=0.0, subscription=True, tokens=tokens_in + tokens_out + round(float(r["claude_code_request_tokens"])))
+        else:
+            t["cost_usd"] = 0.0 if is_local(m) else None
+        out.append(t)
+    return out
+
+
+def cost_text(usd: float) -> str:
+    """An amount in dollars as the user's language writes it: "≈ 0,37 $" in French, "≈ $0.37" in English; under half
+    a cent, "< 0,01 $" rather than a zero that would read as free. The page writes it the same way (costText)."""
+    if usd < 0.005:
+        return i18n.t("est.under_cent")
+    return i18n.t("est.cost", amount=f"{usd:.2f}".replace(".", i18n.t("est.decimal")))
+
+
 def review_text(e: dict, engine_id: str | None) -> str:
     """Readable summary of the review estimate for the log: what is read, and what it takes with the model chosen."""
     what = i18n.t("est.review_full", n=e["count"], names=e["names"]) if e["mode"] == "full" else i18n.t("est.review_names", n=e["names"])
@@ -120,7 +152,7 @@ def review_text(e: dict, engine_id: str | None) -> str:
     if t is None:
         return what
     if t["type"] == "claude":
-        detail = f"≈ {t['cost_usd']:.2f} $" if t.get("cost_usd") is not None else i18n.t("est.unknown_price")
+        detail = cost_text(t["cost_usd"]) if t.get("cost_usd") is not None else i18n.t("est.unknown_price")
     elif t.get("subscription"):
         detail = i18n.t("est.subscription", n=t["tokens"])
     else:
@@ -149,7 +181,7 @@ def text(e: dict, cfg: dict | None = None) -> str:
     parts = [i18n.t("est.summary", n=e["count"], langs=len(e["languages"]), requests=e["requests"], tokens_in=e["input_tokens"], tokens_out=e["output_tokens"])]
     for t in e["translators"]:
         if t["type"] == "claude":
-            parts.append("  " + i18n.t("est.line", name=f"{t['name']} ({t['model']})", detail=f"≈ {t['cost_usd']:.2f} $" if t.get("cost_usd") is not None else i18n.t("est.unknown_price")))
+            parts.append("  " + i18n.t("est.line", name=f"{t['name']} ({t['model']})", detail=cost_text(t["cost_usd"]) if t.get("cost_usd") is not None else i18n.t("est.unknown_price")))
         elif t.get("subscription"):
             parts.append("  " + i18n.t("est.line", name=t["name"], detail=i18n.t("est.subscription", n=t["tokens"])))
         elif t["type"] == "openai":

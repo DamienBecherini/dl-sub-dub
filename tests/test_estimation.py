@@ -1,4 +1,4 @@
-from subtitles import estimation, pipeline
+from subtitles import estimation, i18n, pipeline
 
 CFG = {
     "translation": {"chunk_size": 25},
@@ -79,5 +79,13 @@ def test_prices_overridden_by_the_config():
 
 def test_text():
     t = estimation.text(estimation.estimate(CFG, 499, ["fr"], "en"), CFG)
-    assert "20 requêtes" in t and "Claude (claude-sonnet-5-5) : ≈ 0.15 $" in t and "IA locale : ≈ 4 min 59 s (gratuit)" in t
+    assert "20 requêtes" in t and "Claude (claude-sonnet-5-5) : ≈ 0,15 $" in t and "IA locale : ≈ 4 min 59 s (gratuit)" in t
     assert "Rien à traduire" in estimation.text(estimation.estimate(CFG, 10, ["en"], "en"), CFG)
+
+
+def test_a_cost_is_written_as_the_language_writes_it():
+    """The same words in the log and on the page (its costText reads the same texts): the decimal sign and the place
+    of the dollar of the language, and never a zero for what costs a little."""
+    assert (estimation.cost_text(0.37), estimation.cost_text(12.5), estimation.cost_text(0.004)) == ("≈ 0,37 $", "≈ 12,50 $", "< 0,01 $")
+    i18n.set_language("en")
+    assert (estimation.cost_text(0.37), estimation.cost_text(0.004)) == ("≈ $0.37", "< $0.01")

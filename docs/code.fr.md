@@ -358,15 +358,27 @@ elle raconte ce qui arrive à ses tâches par `QueueEvents` (Observer : `task_ch
 les événements aux étapes de l'élément (`Item.apply`) et réécrire le fichier de projet. Une vidéo seule (`POST /api/tasks`)
 est une tâche que personne n'écoute (`NoEvents`).
 
-Une tâche s'arrête entre la transcription et la traduction (`paused`, `Task.waits` dit pourquoi), trois fois au plus
-et chacune une seule fois (`TaskQueue._pauses_after_preparation`) : avant une relecture IA par un modèle
+Une tâche s'arrête entre la transcription et la traduction (`paused`, `Task.waits` dit pourquoi), quatre fois au plus
+et chacune une seule fois (`TaskQueue._pauses_after_preparation`) : quand sa transcription ressemble peu à sa langue
+(`language`, pour la vidéo d'un projet : `language.doubt` mesure la part des mots courants de cette langue, gardée dans
+`Prepared.doubt` ; les listes sont des fichiers, `subtitles/function_words/<code>.txt` et ceux de l'utilisateur dans
+`language.USER_LISTS`, relus quand ils changent : `language.word_sets` ; un moteur qui ne connaît pas la langue parlée l'écrit à l'oreille, et une relecture ou une traduction
+de ce texte serait perdue, même gratuite ; `TaskQueue.language_opinion` demande à un modèle quelle langue il entend),
+avant une relecture IA par un modèle
 payant (`review` : son estimation, `estimation.review`), quand la relecture propose des noms ou des lignes à décider
 (`validation`, pour les tâches à qui on a demandé de les attendre : `check_names`, mis pour chaque vidéo d'un
 projet), avant une traduction payante (`translation`, sauf si la tâche a déjà été reprise : l'estimation
 de la traduction s'affiche à chaque pause). `resume` lance son passage suivant, éventuellement avec un autre
 traducteur, un autre modèle de relecture, ou sans relecture. Une décision qui change les sous-titres (un nom, une
 ligne : `TaskQueue._seen`) les fait redécouper au passage suivant. Dans un projet, une vidéo de nouveau en pause après
-l'accord attend le suivant (`ProjectRun.held`), et le projet repasse en `awaiting_translation`.
+l'accord attend le suivant (`ProjectRun.held`), et le projet repasse en `awaiting_translation`. Une vidéo lancée seule
+(le bouton de sa ligne) dans un projet qui ne tourne pas se met en pause de la même façon, sans changer l'état du
+projet : `rules.asks` (envoyé comme `rules.go_ahead`) dit que l'accord est demandé là aussi, la page montre le même
+panneau, et `Orchestrator.translate` reprend les vidéos qui attendent, le projet restant tel quel. Deux ensembles du
+projet en cours séparent ce qui se ressemble dans un projet qui ne tourne pas : `agreed`, les vidéos qui ont eu l'accord
+et attendent leur tour d'être traduites (un projet mis en pause entre-temps ne redemande rien), et `finishing`, les
+vidéos au travail quand le projet a été mis en pause « après les vidéos en cours » (il dit « en pause » pendant qu'elles
+se terminent, alors qu'une vidéo lancée seule lui fait dire « en cours » : `rules.alone`).
 
 ### Les téléchargements
 
@@ -607,6 +619,23 @@ le code testé rapporte ensuite des événements. Un test remplace une partie du
 `service.manager` (le travail derrière les routes), `observed.measure_durations` (pas de ffprobe), `background.spawn`
 (le travail en arrière-plan lancé à la main, ou pas du tout), `last_project.FILE`. Chaque échec est aussi noté avec sa date dans `tests/failures.log`, pour qu'un test qui échoue de
 temps en temps laisse une trace.
+
+**La page dans un vrai navigateur.** Les tests nommés `tests/test_page_*.py` ouvrent la page avec
+[Playwright](https://playwright.dev/python/) et cliquent comme un utilisateur : `pip install ".[ui]"`, puis `pytest`
+comme d'habitude. Ils prennent le navigateur installé par Playwright (`playwright install chromium`) ou, à défaut, le
+Chrome ou l'Edge de la machine ; sans Playwright ou sans navigateur ils sont sautés, et le reste de la suite n'a besoin
+ni de l'un ni de l'autre. La CI les lance dans un job à part (`page`), avec `PAGE_TESTS=required` : là, un Playwright ou
+un navigateur absent fait échouer les tests au lieu de les sauter. La fixture `page` de `tests/conftest.py` donne
+à chaque test une page à lui, en français, et fait échouer le test sur une erreur du code de la page (une exception,
+une erreur dans la console) : la page est ouverte après le service du test et fermée avant son arrêt, sinon une requête
+encore en route compte pour une erreur. Le service derrière travaille pour de bon, sur un port à lui : sa file exécute les
+tâches, son ordonnancement et ses routes sont les vrais, sur une transcription gardée sur le disque ; seul ce qui sort
+de la machine est remplacé (le modèle interrogé, la traduction).
+[`tests/test_page_go_ahead.py`](../tests/test_page_go_ahead.py) couvre ce qui attend l'utilisateur avant qu'un modèle
+travaille : l'avertissement de langue douteuse (interroger un modèle, annuler la vidéo, continuer, une liste de
+l'utilisateur lue tout de suite), le coût d'un modèle payant montré avant l'accord donné depuis une ligne, et Lancer
+pendant qu'une vidéo travaille seule. La page interdit `eval` (sa politique de sécurité du contenu) : attendre avec
+`expect(locator)` ; un script donné en texte (`wait_for_function`) y a été refusé.
 
 ## Par où commencer la lecture
 

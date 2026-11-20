@@ -58,7 +58,8 @@ class Task:
         self.video_duration = float(options.get("video_duration") or 0)   # known in advance in a project, otherwise when the audio is extracted
         self.pass_no, self.pass_started = 1, None  # see timing.py
         self.glossary_seen = (0.0, ())         # state of the glossary and of the corrections at segmentation time (see TaskQueue._seen)
-        self.waits = ""                        # paused: for what ("review": its cost, "validation": its proposals, "translation": its cost)
+        self.waits = ""                        # paused: for what ("language": its language is doubtful, "review": its cost, "validation": its proposals, "translation": its cost)
+        self.opinion: dict | None = None       # the language a model found for a doubtful transcription: {code, engine, name}
         self.agreed = False                    # resumed once: the costs shown at its pause are accepted
         self.asked_validation = False          # paused once for the proposals of the review: not asked twice
         self.cleared = False                   # past the pauses before the translation
@@ -317,9 +318,36 @@ class TaskQueue:
         e = estimation.estimate(cfg, len(t.prepared.cues), remaining, t.prepared.code)
         if t.state == TaskState.PAUSED:        # what it waits for, and the AI review it would run first
             e["waits"] = t.waits
-            if t.waits == "review" and (t.estimate or {}).get("review"):
+            if t.waits in ("language", "review") and (t.estimate or {}).get("review"):
                 e["review"] = t.estimate["review"]
+            if t.waits == "language" and t.prepared.doubt:
+                e["doubt"] = {**t.prepared.doubt, "opinion": t.opinion}
         return e
+
+    def language_opinion(self, ident: str, engine_id: str | None = None) -> dict | None:
+        """The language spoken in a video whose transcription is doubtful (it waits for that), asked to a model of the
+        settings that reads a part of it: {code, engine, name}, `code` "" when the model did not say; None when the
+        task does not wait for that. Kept with the task (shown with the warning) and written in its log; the video
+        keeps the language found at its transcription. Raises translation.TranslationError when the model fails."""
+        t = self.tasks.get(ident)
+        if not t or t.state != TaskState.PAUSED or t.waits != "language" or not t.prepared:
+            return None
+        m = config.engine(config.load(), "translators", "active_translator", engine_id or None)
+        if m.get("type", "openai") == "none":
+            raise translation.TranslationError(i18n.t("err.language_opinion_model"))
+        texts = [c.text for c in t.prepared.cues]
+        texts = texts[len(texts) // 3:]                    # past the credits and the music of the beginning
+        translator = translation.create(m, t.write)
+        translator.prepare()
+        try:
+            code = language.ask(translator, texts, question=language.ASK_SPOKEN)
+        finally:
+            translator.finish()
+        t.opinion = {"code": code, "engine": m.get("id"), "name": config.engine_name(m)}
+        t.write(i18n.t("log.language_opinion", name=t.opinion["name"], code=code, lang=i18n.language_name(code)) if code
+                else i18n.t("log.language_opinion_none", name=t.opinion["name"]))
+        self.events.task_progressed(t)
+        return t.opinion
 
     def current(self) -> Task | None:
         return next((t for t in list(self.tasks.values()) if t.state in ACTIVE_TASK_STATES), None)
@@ -461,8 +489,10 @@ class TaskQueue:
         return True
 
     def _pauses_after_preparation(self, t: Task, r: pipeline.Request, cfg: dict, step) -> bool:
-        """Between the transcription and the translation, at each pass until the translation starts; three pauses at
+        """Between the transcription and the translation, at each pass until the translation starts; four pauses at
         most, in this order, each one only once:
+        - when the transcription looks little like its language (`Prepared.doubt`), for the video of a project: the
+          costs of what follows are shown with the warning, and going on accepts them;
         - before an AI review that costs (a paid model): its estimate is shown. A paid model, for the review or the
           translation, always waits for a go-ahead, whatever the order of the work, unless the user said not to be
           asked any more (`spend_agreed`: for this project, from its go-ahead panel; a command line or a script says
@@ -484,6 +514,12 @@ class TaskQueue:
             t.estimate["review"] = {**e, "engine": m_review.get("id")}
             if not t.agreed:
                 t.write(i18n.t("log.review_estimate") + "\n" + estimation.review_text(e, m_review.get("id")))
+        # A transcription that looks little like its language (one the engine does not know, written by ear): a
+        # review or a translation of it, even free, would be lost. The video of a project waits for the user, who
+        # cancels it or goes on; a task on its own (a script) only has the warning in its log.
+        if t.prepared.doubt and not t.agreed and o.get("project"):
+            return self._pause(t, "language", i18n.t("log.paused_language"))
+        if m_review is not None and (names or full):
             # A paid model never runs without a go-ahead, even for the few names of a video.
             if not t.agreed and asks and estimation.pause_by_default(m_review):
                 return self._pause(t, "review", i18n.t("log.paused_review", name=config.engine_name(m_review)))

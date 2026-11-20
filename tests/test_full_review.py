@@ -528,7 +528,7 @@ def test_a_project_stops_for_the_cost_then_for_the_lines_then_translates(monkeyp
 
     turn()
     e = g.projects.estimate("L")
-    assert run.state == "awaiting_translation" and e["waits"] == {"review": 1, "validation": 0, "translation": 0}
+    assert run.state == "awaiting_translation" and e["waits"] == {"language": 0, "review": 1, "validation": 0, "translation": 0}
     assert (e["review"]["videos"], e["review"]["engine"], e["review"]["count"]) == (1, "claude", 4) and not model.requests
     assert g.projects.translate("L", None, None, None, {"review_engine": "local"})        # the go-ahead, with another model
     turn()

@@ -1,0 +1,3 @@
+# Magyar (Hungarian): its function words (see language.py; how to add or improve a list: docs/reference.md).
+# Measured 20/11/2026: 31 % of the words of film subtitles (OpenSubtitles 2018).
+a az és nem hogy is egy van ez de meg én volt csak már még mit ha azt te mi vagy el itt

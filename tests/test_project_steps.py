@@ -99,7 +99,7 @@ def test_run_one_video_while_the_project_is_suspended(g, tmp_path, monkeypatch):
     t = g.queue.get(f.stages[Stage.SUBTITLES].task)
     assert t.options["source"] == f.video and t.options["pause"] is False and t.options.get("until") in (None, "translation")
     assert not g.projects.run_item(run.id, f.id, Stage.SUBTITLES)                           # already running
-    assert run.state == "suspended"
+    assert run.state == "suspended" and run.summary()["rules"]["status"] == "running"       # not run, and said at work meanwhile
 
 
 def test_translate_retry_and_cancel_one_video(g, tmp_path):

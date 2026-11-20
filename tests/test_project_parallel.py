@@ -118,6 +118,29 @@ def test_suspended_project_starts_nothing_more(monkeypatch, tmp_path):
     assert sum(v["state"] == "running" for v in run.videos) == 4
 
 
+def test_a_project_paused_while_it_translates_says_paused(monkeypatch, tmp_path):
+    """After the go-ahead, the videos transcribed wait for their turn, not for the user: pausing the project then
+    shows neither the go-ahead again nor "running" for the videos that end."""
+    g = manager(monkeypatch, tmp_path, "claude")
+    run = project_in_phase_2(g, tmp_path, 8, "claude")
+    run.phase, run.state = 1, "awaiting_translation"
+    assert run.summary()["rules"]["go_ahead"]
+    assert g.projects.translate("L", "claude", ["fr"]) and len(run.agreed) == 8
+    g.projects.feed()
+    assert run.summary()["rules"]["status"] == "running"
+    g.projects.suspend("L")
+    rules = run.summary()["rules"]
+    at_work = [v for v in run.videos if v["state"] == "running"]
+    assert (rules["status"], rules["go_ahead"], rules["working"]) == ("suspended", False, True) and 0 < len(at_work) == len(run.finishing) < 8
+    assert not g.projects.translate("L", "claude", ["fr"])                     # nothing waits for a go-ahead
+    for v in at_work:                                                          # they end: still paused, the others wait for their turn
+        t = g.queue.tasks[v["task"]]
+        t.state = "done"
+        g.projects.task_changed(t)
+    rules = run.summary()["rules"]
+    assert (rules["status"], rules["go_ahead"], rules["working"]) == ("suspended", False, False) and not run.finishing
+
+
 def test_parallel_translations_run_in_their_own_thread(monkeypatch, tmp_path):
     g = manager(monkeypatch, tmp_path, "claude")
     run = project_in_phase_2(g, tmp_path, 3, "claude")

@@ -11,7 +11,7 @@ import os
 import time
 from pathlib import Path
 
-from .. import config, corrections, dubbing, glossary, i18n, language, pipeline, review, source, steps
+from .. import config, corrections, dubbing, estimation, glossary, i18n, language, pipeline, review, source, steps
 from ..project import STAGES, Event, Item, Project, Stage, StageState, rules, settings, store
 from ..project.choices import (LANGUAGE_KEYS, RECHECK_KEYS, STEP_OF_SETTING, normalized, origin_of, own, stages_for, stop_for,
                                tick_with_needs, until_of)
@@ -359,11 +359,14 @@ class Orchestrator(Scheduler):
     def estimate(self, ident: str, languages: list[str] | None = None) -> dict | None:
         """Sum of the estimates of the prepared videos (transcribed, task paused before the translation), with what
         they wait for (`waits`: how many for the cost of their AI review, for a decision on its proposals, for the cost
-        of their translation) and the estimate of the AI reviews not run yet (`review`, see estimation.review)."""
+        of their translation, because their language is doubtful) and the estimate of the AI reviews not run yet
+        (`review`, see estimation.review). `doubts`: the videos whose transcription looks little like its language
+        ([{item, title, task, code, share, words, opinion}], see language.doubt), and with them `opinion_models`: what
+        asking each model for their language takes, and `lists_folder`: where the user adds lists of function words."""
         run = self.all.get(ident)
         if not run:
             return None
-        total, waits, reviews = None, {"review": 0, "validation": 0, "translation": 0}, None
+        total, waits, reviews, doubts = None, {"language": 0, "review": 0, "validation": 0, "translation": 0}, None, []
         for item in run.items():
             task = item.stages[Stage.SUBTITLES].task
             if item.state(Stage.SUBTITLES) != S.PAUSED or not task:
@@ -373,6 +376,9 @@ class Orchestrator(Scheduler):
                 continue
             if e.get("waits") in waits:
                 waits[e["waits"]] += 1
+            doubt = e.pop("doubt", None)
+            if doubt:
+                doubts.append({"item": item.id, "title": item.title or Path(item.video or item.source).name, "task": task, **doubt})
             reviews = self._add_review(reviews, e.get("review"))
             if not e["languages"]:                       # already translated into these languages: will cost nothing
                 continue
@@ -387,7 +393,8 @@ class Orchestrator(Scheduler):
                         if a.get(k) is not None and b.get(k) is not None:
                             a[k] = round(a[k] + b[k], 4)
             total["videos"] += 1
-        return {**(total or {"languages": [], "count": 0}), "waits": waits, "review": reviews}
+        return {**(total or {"languages": [], "count": 0}), "waits": waits, "review": reviews, "doubts": doubts,
+                **({"opinion_models": estimation.language_question(config.load()), "lists_folder": str(language.USER_LISTS)} if doubts else {})}
 
     @staticmethod
     def _add_review(total: dict | None, r: dict | None) -> dict | None:
@@ -482,6 +489,7 @@ class Orchestrator(Scheduler):
         if not run or run.state != RunState.RUNNING:
             return False
         run.state = RunState.SUSPENDED                       # the running videos and downloads go on to their end
+        run.finishing = {i.id for i in run.project.items if any(i.state(s) == S.RUNNING for s in i.stages)}
         run.save()
         return True
 
@@ -554,9 +562,12 @@ class Orchestrator(Scheduler):
                   review_choice: dict | None = None) -> bool:
         """The go-ahead for the videos that wait: their AI review if it waited for its cost, then their translation
         (they stop once more if the review proposes something to decide). `review_choice` {review?, review_engine?}:
-        another kind of review ("" for none) or another model for it, for the project from now on."""
+        another kind of review ("" for none) or another model for it, for the project from now on. In a project that
+        does not run (paused, finished: a video run on its own, from its line, waits), the videos that wait go on, on
+        their own too: the project stays as it is."""
         run = self.all.get(ident)
-        if not run or run.state != RunState.AWAITING_TRANSLATION:
+        at_rest = bool(run) and run.state in (RunState.SUSPENDED, RunState.DONE) and rules.asks(run.context(), run.project)
+        if not run or not (run.state == RunState.AWAITING_TRANSLATION or at_rest):
             return False
         chosen = {k: v for k, v in (review_choice or {}).items() if k in ("review", "review_engine", "spend_agreed") and v is not None}
         for k, v in normalized(chosen).items():
@@ -565,8 +576,16 @@ class Orchestrator(Scheduler):
             else:
                 run.options[k] = v
         run.held.clear()
-        if run.by_video:                       # video by video: the video that waits goes on, the next ones after it
-            run.state = RunState.RUNNING
+        if at_rest or not run.by_video:
+            if translator is not None:
+                run.options["translator"] = translator
+            if languages is not None:
+                run.options["languages"] = language.normalize_codes(languages)
+            if stop:
+                self._set_stop(run, stop)
+        if run.by_video or at_rest:            # video by video: the video that waits goes on, the next ones after it
+            if not at_rest:
+                run.state = RunState.RUNNING
             with run.lock:
                 for item in run.items():
                     task = item.stages[Stage.SUBTITLES].task
@@ -580,13 +599,8 @@ class Orchestrator(Scheduler):
                 run.save()
             self.queue.wake.set()
             return True
-        if translator is not None:
-            run.options["translator"] = translator
-        if languages is not None:
-            run.options["languages"] = language.normalize_codes(languages)
-        if stop:
-            self._set_stop(run, stop)
         run.phase, run.state = 2, RunState.RUNNING
+        run.agreed = {i.id for i in run.items() if i.state(Stage.SUBTITLES) == S.PAUSED}      # they wait for their turn from now on
         run.save()
         self.queue.wake.set()
         return True

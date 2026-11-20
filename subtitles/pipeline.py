@@ -67,6 +67,7 @@ class Prepared:
     output_dir: Path
     start: float
     before: list[str] | None = None    # the subtitles cut without the fixes accepted (see translation_of); None: no fix accepted
+    doubt: dict | None = None          # the transcription looks little like its language (language.doubt): {code, share, words}
 
 
 @dataclass
@@ -287,7 +288,11 @@ def prepare(r: Request, log=print, step=lambda name: None, cancelled=lambda: Fal
     source_srt = work / f"{base}.{code}.srt"
     source_srt.write_text(formats.srt(cues, settings), encoding="utf-8")
     log(i18n.t("log.source_subtitles", code=code, lang=i18n.language_name(code), n=len(cues), file=source_srt.name))
-    return Prepared(video, work, base, code, cues, source_srt, output_dir, t_start, before)
+    doubt = language.doubt(tr.get("text") or " ".join(str(w.get("word", "")) for w in tr["words"]), code)
+    if doubt:                                  # a language the engine does not know, written by ear: said before anything is spent on it
+        log(i18n.t("log.language_doubt" if doubt["code"] else "log.language_doubt_none", share=round(doubt["share"] * 100),
+                   lang=i18n.language_name(code), words=doubt["words"], usual=round(doubt["usual"] * 100)))
+    return Prepared(video, work, base, code, cues, source_srt, output_dir, t_start, before, doubt)
 
 
 def _fingerprint(f: Path) -> str:

@@ -187,6 +187,27 @@ def test_continue_resumes_the_paused_task_to_the_end(monkeypatch, tmp_path):
     assert not g.projects.continue_video("L", "v0.mp4")   # already running
 
 
+def test_the_go_ahead_of_a_project_at_rest_resumes_the_videos_that_wait(monkeypatch, tmp_path):
+    """A video run on its own, from its line, in a finished project, stopped before a paid model: the go-ahead of the
+    project (its panel) makes it go on with the choices made there; the project stays finished and starts nothing else."""
+    g = manager(monkeypatch, tmp_path)
+    run = create_project(g, tmp_path, ["prepared", "todo"])
+    run.state = "done"
+    t = Task({"source": "v0.mp4", "project": "L"})
+    t.state, t.prepared = "paused", SimpleNamespace(cues=[1], code="en")
+    g.queue.tasks[t.id] = t
+    g.queue.order.append(t.id)
+    update(run, 0, task=t.id)
+    assert run.summary()["rules"]["go_ahead"]
+    assert g.projects.translate("L", "claude", ["fr"], None, {"review": ""})
+    assert t.state == "queued" and t.agreed and t.options["languages"] == ["fr"] and t.options["review"] == ""
+    assert [v["state"] for v in run.videos] == ["running", "todo"] and run.state == "done"
+    assert not g.projects.translate("L", "claude", ["fr"])                     # nothing waits any more
+    run.state = "running"
+    update(run, 0, state="prepared")
+    assert not g.projects.translate("L", "claude", ["fr"])                     # a running project asks once, for all
+
+
 def test_continue_without_dubbing_stops_at_the_translation(monkeypatch, tmp_path):
     g = manager(monkeypatch, tmp_path, with_dubbing=False)
     run = create_project(g, tmp_path, ["todo"])

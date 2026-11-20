@@ -25,7 +25,7 @@ const runLabel = (s, hasAddresses) => {
      "Resume: Dubbing"). All of them while nothing says otherwise. */
   const steps = run?.open.length ? run.open : all;
   const resume = !!run?.resume;                          // paused or stopped, with work left to resume
-  if (nothingToRun(s)) return T("v2.nav.nothing");
+  if (nothingToRun(s)) return T(nothingElse(s) ? "v2.nav.nothing_else" : "v2.nav.nothing");
   if (!steps.length) return T(resume ? "v2.project.resume" : "v2.nav.run");
   return html`<span class="run-verb">${T(resume ? "v2.project.resume" : "v2.nav.run_verb")}</span>
     <span class="run-steps">${steps.map((k) => T("v2.step." + k)).join(" + ")}</span>`;
@@ -45,9 +45,16 @@ function newProject() {
            notes: [], error: "" });
 }
 
-/* A project where nothing ticked is left to do (every box unticked, or the steps ticked all done): Run would start
-   and stop at once, so it says so and waits for a box. */
+/* A project where nothing ticked is left to do (every box unticked, or the steps ticked all done or already at work,
+   a video run from its line): Run would start nothing and stop at once, so it says so and waits for a box. */
 const nothingToRun = (s) => !!s.project && !s.project.rules.run.open.length && !s.project.rules.run.resume;
+
+/* Nothing to run because what is ticked is at work already: said as such ("Nothing else to run"). */
+const nothingElse = (s) => nothingToRun(s) && !!s.project.rules.working;
+
+/* What waits for the user (the proposals of the review, the go-ahead and its cost) is above the list: brought into
+   sight from the bar, which stays on the screen wherever the list is scrolled. */
+const seeRequest = () => document.querySelector(".names-panel, .translation-panel")?.scrollIntoView({ behavior: "smooth", block: "center" });
 
 /* Run, and next to it ▾: one step only, for the videos ticked for it ("Only subtitle (2 to do)"). */
 function RunButton({ s, p, ticked, hasAddresses }) {
@@ -55,7 +62,7 @@ function RunButton({ s, p, ticked, hasAddresses }) {
   return html`
     <span class="run-split" ref=${box}>
       <button type="button" class="primary run-main" disabled=${!p || !ticked || !!s.busy || nothingToRun(s)}
-              title=${T(nothingToRun(s) ? "v2.nav.nothing_title" : "v2.nav.run_title")} onClick=${run}>${runLabel(s, hasAddresses)}</button>
+              title=${T(nothingElse(s) ? "v2.nav.nothing_else_title" : nothingToRun(s) ? "v2.nav.nothing_title" : "v2.nav.run_title")} onClick=${run}>${runLabel(s, hasAddresses)}</button>
       ${p && html`
         <button type="button" class="primary run-more" aria-haspopup="menu" aria-expanded=${menu} title=${T("v2.nav.one_step")}
                 aria-label=${T("v2.nav.one_step")} disabled=${!!s.busy || p.state === "cancelled"} onClick=${() => setMenu(!menu)}>▾</button>
@@ -88,7 +95,7 @@ function App() {
       try {
         const d = await api("GET", `/api/projects/${s.projectId}`);
         if (!stop) update({ project: d });
-        const working = d.rules.working || d.state === "awaiting_translation"                     // one video run on its own too
+        const working = d.rules.working || d.rules.go_ahead                   // one video run on its own too
           || d.items.some((i) => i.facts.adding || (/^https?:/.test(i.source) && !i.facts.site && !i.facts.site_error));  // being read
         timer = setTimeout(poll, working ? 1000 : 5000);
       } catch (e) {                                     // project gone (service restarted without it)
@@ -129,6 +136,8 @@ function App() {
       <${WorkshopScreen} s=${s} items=${items} />
       <div class="nav-bar">
         ${p && html`<span class=${`chip state-${stateKey(p)}`}>${T("v2.project.state." + stateKey(p))}</span>`}
+        ${p?.rules.go_ahead && html`
+          <button type="button" class="small" title=${T("v2.nav.see_request_title")} onClick=${seeRequest}>${T("v2.nav.see_request")}</button>`}
         ${reading && html`<span class="help">${T("v2.nav.waiting_reading")}</span>`}
         <${Finishing} p=${p} />
         <span class="spacer"></span>

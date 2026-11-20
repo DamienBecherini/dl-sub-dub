@@ -36,11 +36,13 @@ export function OrderSwitch({ p, disabled = false }) {
 
 /* What waits for the user, above the videos. What the AI review proposes is decided first: while proposals wait, they
    are shown alone, and the go-ahead (a translation, a paid review) comes once they are decided: what is accepted applies
-   before translating. "Later" shows the go-ahead at once, the proposals under it (nothing is fixed without a decision). */
+   before translating. "Later" shows the go-ahead at once, the proposals under it (nothing is fixed without a decision).
+   The service says when the go-ahead is asked (p.rules.go_ahead): the project stopped for it, or it does not run and a
+   video run on its own, from its line, waits. */
 export function Notices({ p }) {
   const [toDecide, setToDecide] = useState(null);         // proposals shown by the panel; null: not known yet
   const [later, setLater] = useState(false);
-  const goAhead = p?.state === "awaiting_translation";
+  const goAhead = !!p?.rules.go_ahead;
   useEffect(() => { setLater(false); }, [p?.id, goAhead]);
   if (!p) return null;
   const first = goAhead && !later;                        // the proposals come before the go-ahead

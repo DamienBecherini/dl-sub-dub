@@ -1,0 +1,4 @@
+# Українська (Ukrainian): its function words (see language.py; how to add or improve a list: docs/reference.md).
+# Measured 20/11/2026: 23 % of the words of film subtitles (OpenSubtitles 2018), a figure too low: about a third of
+# those subtitles are in Russian.
+і в не я на що він з це як а то ти але у ж ви за по ми вона так його та є й ні ще вже чи мені

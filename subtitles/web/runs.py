@@ -78,6 +78,8 @@ class ProjectRun:
         self.card = CardShare()
         self.review_stamp = 0                  # raised when proposals come from outside (an assistant): the page reads them again
         self.held: set[str] = set()            # videos paused again after a go-ahead (the proposals of their AI review): they wait for the next one
+        self.finishing: set[str] = set()       # videos at work when the project was paused "after the running videos": they end (see rules.alone)
+        self.agreed: set[str] = set()          # videos that had the go-ahead of the project and wait for their turn (phase 2): not for the user (see rules.asks)
         self.changes = Changes()               # told at each save, each progress of a task or of a download
         self.lock = threading.RLock()          # the parallel tasks and the downloads update the project and its file
 
@@ -164,7 +166,10 @@ class ProjectRun:
             if key not in resolved:
                 resolved[key] = settings.resolve(cfg, self.project, item)
             return resolved[key]
-        return rules.Context(of, available, str(self.state), self.started(), sharing, self.options.get("language") or "")
+        self.finishing &= {i.id for i in self.project.items if any(i.state(s) == S.RUNNING for s in i.stages)}     # ended: no longer
+        self.agreed &= {i.id for i in self.project.items if i.state(Stage.SUBTITLES) == S.PAUSED}                  # taken: no longer
+        return rules.Context(of, available, str(self.state), self.started(), sharing, self.options.get("language") or "",
+                             frozenset(self.finishing), frozenset(self.agreed - self.held))
 
     def follow_ticks(self):
         """The steps of the project are the ones ticked for at least one video (rules.ticked_steps), and how far the

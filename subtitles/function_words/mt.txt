@@ -1,0 +1,4 @@
+# Malti (Maltese): its function words (see language.py; how to add or improve a list: docs/reference.md).
+# Measured 20/11/2026: 24 to 27 % of the words of four articles of the Maltese Wikipedia. Without "il": an engine that
+# does not know Arabic writes it by ear with that article, and the list must not take such a text for Maltese.
+l ta tal u li fil fl f mill minn ma għal huwa hija dan din dawn kien kienet kienu biex jew mhux fuq bil lil ġie kif ukoll bħala

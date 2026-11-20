@@ -245,6 +245,50 @@ export function SubtitleDetails({ p, item }) {
     </div>`;
 }
 
+/* An amount in dollars as the language of the page writes it ("≈ 0,37 $" in French, "≈ $0.37" in English; under half
+   a cent, "< 0,01 $"): the same words as the log of the service (estimation.cost_text). */
+const amountText = (usd) => (usd < 0.005 ? T("est.under_cent") : T("est.cost", { amount: usd.toFixed(2).replace(".", T("est.decimal")) }));
+
+/* What a model would cost for an estimate ({cost_usd, duration_s, subscription?, tokens?}): "≈ 0,37 $ · ≈ 3 min",
+   "free", the tokens of a Claude Code subscription (nothing billed); `unknown`: say so when the price is not known. */
+export const costText = (t, unknown = false) => (t.subscription ? T("v2.sub.subscription", { n: Number(t.tokens).toLocaleString(I18N.language) })
+  : t.cost_usd != null ? (t.cost_usd === 0 ? T("v2.sub.free") : amountText(t.cost_usd))
+  : unknown ? T("v2.sub.unknown_price") : "")
+  + (t.duration_s ? ` · ≈ ${Math.max(1, Math.round(t.duration_s / 60))} min` : "");
+
+/* A video whose transcription looks little like its language (estimate.doubts, measured by the service): the engine
+   probably does not know the language spoken and wrote it by ear. Said before anything is reviewed or translated, with
+   the measure; the video is cancelled here, or a model of the settings is asked which language it hears (one short
+   request: its cost is in the list, a free model is proposed first). Going on anyway is the button of the panel. */
+function Doubt({ p, d, models, refresh }) {
+  const [engine, setEngine] = useState((models.find((t) => t.cost_usd === 0) || models[0])?.id || "");
+  const [asking, setAsking] = useState(false);
+  const numbers = { share: Math.round(d.share * 100), usual: Math.round(d.usual * 100), words: d.words, lang: languageName(d.code) || d.code };
+  const ask = async () => {
+    setAsking(true);
+    await busy("", () => api("POST", `/api/tasks/${d.task}/language`, { engine }));
+    setAsking(false);
+    refresh();
+  };
+  return html`
+    <div class="doubt">
+      <p><strong>${d.title}</strong><br />${T(d.code ? "v2.sub.doubt" : "v2.sub.doubt_none", numbers)}</p>
+      ${d.opinion && html`<p class="opinion">${d.opinion.code
+        ? T("v2.sub.doubt_opinion", { name: d.opinion.name, lang: languageName(d.opinion.code) || d.opinion.code })
+        : T("v2.sub.doubt_opinion_none", { name: d.opinion.name })}</p>`}
+      <div class="row">
+        <button type="button" class="small secondary" onClick=${() => act(`/api/projects/${p.id}/items/${d.item}/cancel`, { stage: "subtitles" })}>${T("v2.sub.doubt_cancel")}</button>
+        ${models.length > 0 && html`
+          <label class="inline-field">${T("v2.sub.doubt_ask")}
+            <select value=${engine} onChange=${(e) => setEngine(e.target.value)}>
+              ${models.map((t) => html`<option value=${t.id}>${t.name} (${costText(t, true)})</option>`)}
+            </select>
+          </label>
+          <button type="button" class="small" disabled=${asking} onClick=${ask}>${T("v2.sub.doubt_ask_go")}</button>`}
+      </div>
+    </div>`;
+}
+
 /* What the videos transcribed wait for, with what it will take: the go-ahead for an AI review that costs (its
    estimate, with each model that can review, or no review), a decision on what the review proposes (the panel
    below), the go-ahead for the translation (its estimate, the translator and the languages). One button for all. */
@@ -254,15 +298,15 @@ export function TranslationPanel({ p, undecided = false }) {
   const [reviewer, setReviewer] = useState(null);         // null: the model of the project; "": no review
   const [noMore, setNoMore] = useState(false);            // not to be asked again before a paid model, in this project
   const [estimate, setEstimate] = useState(null);
+  const [asked, setAsked] = useState(0);                  // a model was asked for the language of a video: read again
   useEffect(() => {
     let gone = false;
     api("GET", `/api/projects/${p.id}/estimate?languages=${encodeURIComponent(languages.join(","))}`)
       .then((e) => { if (!gone) setEstimate(e); }).catch(() => {});
     return () => { gone = true; };
-  }, [p.id, languages.join(","), p.counts?.prepared]);
-  const cost = (t, unknown) => (t.subscription ? T("v2.sub.subscription", { n: Number(t.tokens).toLocaleString(I18N.language) })         // Claude Code: nothing billed
-    : t.cost_usd != null ? (t.cost_usd === 0 ? T("v2.sub.free") : `≈ ${t.cost_usd.toFixed(2)} $`) : unknown ? T("v2.sub.unknown_price") : "")
-    + (t.duration_s ? ` · ≈ ${Math.max(1, Math.round(t.duration_s / 60))} min` : "");
+  }, [p.id, languages.join(","), p.counts?.prepared, asked]);
+  const cost = costText;
+  const doubts = estimate?.doubts || [];
   const rv = estimate?.review;
   const chosen = reviewer ?? rv?.engine ?? "";
   const go = () => post(`/api/projects/${p.id}/translate`,
@@ -270,6 +314,13 @@ export function TranslationPanel({ p, undecided = false }) {
   return html`
     <div class="translation-panel">
       <h3>${T(rv ? "v2.sub.waiting_review_title" : "v2.sub.waiting_title")}</h3>
+      ${doubts.length > 0 && html`
+        <div class="doubts" role="alert">
+          <h4>${T("v2.sub.doubt_title")}</h4>
+          ${doubts.map((d) => html`<${Doubt} key=${d.item} p=${p} d=${d} models=${estimate.opinion_models || []} refresh=${() => setAsked((n) => n + 1)} />`)}
+          <p class="help">${T("v2.sub.doubt_help")}</p>
+          <p class="help">${T("v2.sub.doubt_lists", { folder: estimate.lists_folder || "function_words" })}</p>
+        </div>`}
       ${rv && html`
         <p>${T(rv.mode === "full" ? "v2.sub.review_estimate_full" : "v2.sub.review_estimate_names", { videos: rv.videos, n: rv.count, names: rv.names })}</p>
         <div class="choices column">

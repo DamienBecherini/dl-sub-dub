@@ -30,7 +30,7 @@ The tool runs on your machine, with the engines you choose:
 
 ![The page: each video with its boxes for the steps, its state in each one, its own settings and its log](docs/images/en/workshop-dark.png)
 
-**What this repository shows:** a Python package with no runtime dependency outside the standard library (`dependencies = []` in [pyproject.toml](pyproject.toml)), which drives FFmpeg and yt-dlp as subprocesses. The transcription comes with word timestamps from a server you run, [transcription-handy-like](https://github.com/DamienBecherini/transcription-handy-like) or any OpenAI-compatible one; the translation goes through a local LLM, the Claude API, Claude Code or any OpenAI-compatible API. 526 pytest tests, in which the engines, yt-dlp and the dubbing worker are fakes and nothing goes on the network, run with a ruff lint on every push and pull request (Python 3.11 and the latest stable release).
+**What this repository shows:** a Python package with no runtime dependency outside the standard library (`dependencies = []` in [pyproject.toml](pyproject.toml)), which drives FFmpeg and yt-dlp as subprocesses. The transcription comes with word timestamps from a server you run, [transcription-handy-like](https://github.com/DamienBecherini/transcription-handy-like) or any OpenAI-compatible one; the translation goes through a local LLM, the Claude API, Claude Code or any OpenAI-compatible API. 574 pytest tests, in which the engines, yt-dlp and the dubbing worker are fakes and nothing goes on the network, run with a ruff lint on every push and pull request (Python 3.11 and the latest stable release); six of them drive the page in a real browser (Playwright).
 
 ## Why
 
@@ -312,6 +312,7 @@ The web page uses a local JSON API on `http://127.0.0.1:4420`, which scripts can
 | `POST /api/tasks` `{source, languages?, translator?, transcription?, output_dir?, pause?, spend_agreed?}` | one video (file or address) → task; a paid translator waits for `…/translate` unless `spend_agreed` is true |
 | `GET /api/tasks/<id>?since=N` | state, current step, log lines from N |
 | `POST /api/tasks/<id>/translate` `{translator?, languages?}` | continue a task paused before translation |
+| `POST /api/tasks/<id>/language` `{engine?}` | asks a model which language is spoken in a video paused because its transcription is doubtful → `{code, engine, name}` |
 | `POST /api/folder` `{path}` then `GET /api/folder/<id>?videos=1` | list the videos of a folder |
 | `POST /api/youtube` `{url}` | title and duration of a video address, or the playlist it designates, without downloading |
 | `POST /api/playlist` `{url}` then `GET /api/playlist/<id>` | download a whole playlist into a folder, then open it with `/api/folder` |

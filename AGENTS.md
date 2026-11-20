@@ -69,6 +69,17 @@ server: the contract"). Check, in this order:
 Any OpenAI-compatible server that returns words with `start` and `end` works too. One that returns only segments is
 refused with a clear message.
 
+**The languages of the engine and the lists of function words.** The tool finds the spoken language, and warns when a
+transcription looks little like its language (an engine that does not know the language writes it by ear), from lists
+of function words: one file a language, those of the 25 languages of Parakeet come with it (`docs/reference.md`, "The
+lists of function words"). When the user's engine knows other languages they need (a Whisper model: Arabic, Turkish…),
+offer to add their lists: write `<settings folder>/function_words/<code>.txt` (about 25 of the most frequent small
+words of the spoken language, lower case, separated by spaces; `#` starts a comment line), then measure it on a real
+transcription or on subtitles in that language with `.venv/bin/python -m subtitles.language <file> <code>`: 15 % or
+more for its own language, clearly more than every other list, otherwise add words and measure again. Do the same to
+improve a list of the tool that gives too little on the user's videos (a file of the same name in that folder
+replaces it), and tell the user the figures. Never write a list you did not measure.
+
 ## 4. Choose the languages and the translator, with the user
 
 Ask in one short message:

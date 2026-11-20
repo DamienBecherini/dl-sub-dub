@@ -41,6 +41,8 @@ class Context:
     started: bool = False                          # some work was done or is under way (ProjectRun.started)
     sharing: str = ""                              # how the graphics card is shared (gpu.sharing)
     language: str = ""                             # the spoken language chosen for the project ("" = detected)
+    finishing: frozenset = frozenset()             # ids of the videos that end after "pause after the running videos"
+    agreed: frozenset = frozenset()                # ids of the videos that had the go-ahead and wait for their turn to be translated
 
     @property
     def closed(self) -> bool:
@@ -179,6 +181,40 @@ def open_step(item: Item, stage: Stage) -> bool:
     return item.ticked(stage) and item.state(stage) not in FINISHED
 
 
+def to_take(item: Item, stage: Stage) -> bool:
+    """Ticked for this step, which Run still has to take: not finished, and not at work already (a video run on its
+    own, from its line: Run would start nothing for it; one that waits for its go-ahead is still to take)."""
+    return open_step(item, stage) and item.state(stage) != S.RUNNING
+
+
+def at_work(project: Project) -> bool:
+    """A step of a video is running, started by the project or on its own."""
+    return any(i.state(s) == S.RUNNING for i in project.items for s in STAGES)
+
+
+def alone(ctx: Context, project: Project) -> bool:
+    """A video is at work on its own (run from its line, or resumed by a go-ahead) in a project that does not run.
+    Not the videos that end after "pause after the running videos" (`ctx.finishing`): the project asked to pause, and
+    says so while they end."""
+    return ctx.state in ("done", "suspended") and any(
+        i.state(s) == S.RUNNING for i in project.items if i.id not in ctx.finishing for s in STAGES)
+
+
+def waiting(project: Project) -> list[Item]:
+    """The ticked videos whose subtitles wait for the user: the cost of their AI review or of their translation to
+    accept, the proposals of their review to decide."""
+    return [i for i in project.selected() if i.state(Stage.SUBTITLES) == S.PAUSED]
+
+
+def asks(ctx: Context, project: Project) -> bool:
+    """The go-ahead is asked now, above the list, with what it costs: the project stopped for it, or it does not run
+    and videos wait (one run on its own, from its line; those a pause left waiting before the go-ahead). While the
+    project runs, the videos transcribed wait for the others: the go-ahead is asked once, for all of them. Those that
+    had it and wait for their turn to be translated (`ctx.agreed`: a project paused meanwhile) ask nothing more."""
+    return ctx.state == "awaiting_translation" or (
+        ctx.state in ("suspended", "done") and any(i.id not in ctx.agreed for i in waiting(project)))
+
+
 def ticked_steps(project: Project) -> list[Stage]:
     """The steps of the project: those ticked for at least one video (done or not), in the order they run. A column
     ticked is a step Run runs; nothing else says it."""
@@ -215,7 +251,13 @@ def blocked(project: Project, active: list[Stage] | None = None) -> list[Item]:
 
 def status(ctx: Context, project: Project) -> str:
     """The state of a project in words: created and not run yet, it is "ready", not "suspended"; with nothing left,
-    "done"."""
+    "done". What a video run on its own does is said too: a project that does not run (finished, paused, never run)
+    where one is at work is "running" meanwhile, and one where a video waits for the go-ahead is
+    "awaiting_translation". A project paused while its videos end stays "suspended" (see `alone`)."""
+    if alone(ctx, project):
+        return "running"
+    if asks(ctx, project):
+        return "awaiting_translation"
     if not ctx.suspended:
         return ctx.state
     nothing_left = all(not open_step(i, s) for i in project.selected() for s in project.stages)
@@ -251,12 +293,14 @@ def item_view(ctx: Context, project: Project, item: Item) -> dict:
 
 
 def project_view(ctx: Context, project: Project) -> dict:
-    """What these rules say of the project as a whole (the `rules` of its summary)."""
+    """What these rules say of the project as a whole (the `rules` of its summary). `run.open`: the steps Run has
+    something to take for, named on its button; none (and nothing to resume): the button waits, even while a video
+    run on its own is at work. `go_ahead`: the go-ahead is asked now (see `asks`)."""
     steps_run = run_steps(project)
-    open_steps = [s for s in steps_run if any(open_step(i, s) for i in project.selected())]
     rows = project.selected()
+    open_steps = [s for s in steps_run if any(to_take(i, s) for i in rows)]
     return {"status": status(ctx, project), "locked": locked(project.items),
-            "working": ctx.running or any(i.state(s) == S.RUNNING for i in project.items for s in STAGES),
+            "working": ctx.running or at_work(project), "go_ahead": asks(ctx, project),
             "finished": sum(1 for i in rows if all(not i.stages[s].selected or i.state(s) in FINISHED for s in project.stages)),
             "run": {"steps": steps_run, "open": open_steps,
                     "resume": ctx.suspended and ctx.started and any(ready(ctx, i, s) for s in (open_steps or steps_run) for i in project.items)},

@@ -15,6 +15,7 @@ from pathlib import Path
 from . import config, i18n
 
 DATA_FILES = ("config.json", "history.json", "speeds.json", "last_project.json")
+DATA_FOLDERS = ("function_words",)        # the user's lists of function words (language.py): they move with the settings
 
 
 def current() -> Path:
@@ -69,9 +70,21 @@ def move(path: str, action: str = "move") -> str:
         if dest.stat().st_size != src.stat().st_size:
             raise OSError(i18n.t("err.location_copy", name=name))
         copies.append(src)
+    folders = []
+    for name in DATA_FOLDERS:
+        src, dest = source / name, target / name
+        if not src.is_dir():
+            continue
+        shutil.copytree(src, dest, dirs_exist_ok=True)
+        for f in src.rglob("*"):
+            if f.is_file() and (not (dest / f.relative_to(src)).is_file() or (dest / f.relative_to(src)).stat().st_size != f.stat().st_size):
+                raise OSError(i18n.t("err.location_copy", name=f"{name}/{f.relative_to(src).as_posix()}"))
+        folders.append(src)
     _write(target)
     for src in copies:                    # the copies are checked and the location written: the originals can go
         src.unlink(missing_ok=True)
+    for src in folders:
+        shutil.rmtree(src, ignore_errors=True)
     return i18n.t("cfg.location_moved", n=len(copies), path=target)
 
 
@@ -91,9 +104,11 @@ def _write(target: Path):
 
 def repoint():
     """The modules that keep the path of a data file take the new one (the service goes on without a restart)."""
+    from . import language
     from .web import last_project, tasks, timing
     folder = current()
     config.USER_FILE = folder / "config.json"
+    language.USER_LISTS = folder / "function_words"
     tasks.HISTORY_FILE = folder / "history.json"
     timing.FILE = folder / "speeds.json"
     last_project.FILE = folder / "last_project.json"

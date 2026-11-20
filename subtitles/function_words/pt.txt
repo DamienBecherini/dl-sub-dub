@@ -1,0 +1,3 @@
+# Português (Portuguese): its function words (see language.py; how to add or improve a list: docs/reference.md).
+# Measured 20/11/2026: 30 % of the words of film subtitles (OpenSubtitles 2018).
+o a os as e é que de um uma para com não se do da em mais mas como também muito isso

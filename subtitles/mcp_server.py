@@ -71,14 +71,21 @@ def video_brief(item: dict) -> dict:
             **({"spoken_language": facts["detected_language"]} if facts.get("detected_language") else {})}
 
 
+def asks(p: dict) -> bool:
+    """The project asks for the user's go-ahead: stopped for it, or not running with a video that waits (run on its own)."""
+    return p.get("state") == "awaiting_translation" or bool((p.get("rules") or {}).get("go_ahead"))
+
+
 def project_brief(p: dict, videos: bool = True) -> dict:
     out = {"id": p["id"], "title": p.get("title"), "folder": p.get("root"), "state": p.get("state"),
            "steps": p.get("stages"), "order": p.get("order"), "videos_count": len(p.get("items") or [])}
     if p.get("remaining_s"):
         out["remaining_s"] = p["remaining_s"]
-    if p.get("state") == "awaiting_translation":
+    if asks(p):
         out["note"] = ("The project waits for the user's go-ahead: an AI review or a translation that may cost (see the estimate, then "
-                       "approve_translation), or fixes proposed by the AI review, to decide on the page first.")
+                       "approve_translation), fixes proposed by the AI review, to decide on the page first, or a video whose "
+                       "transcription looks little like its language (`doubts` of the estimate: the engine probably does not "
+                       "know the language spoken; tell the user before approving, the translation would be worthless).")
     if videos:
         out["videos"] = [video_brief(i) for i in p.get("items") or []]
     return out
@@ -117,7 +124,7 @@ def t_list_projects(a):
 def t_project_status(a):
     p = call("GET", f"/api/projects/{a['project_id']}")
     out = project_brief(p)
-    if p.get("state") == "awaiting_translation":
+    if asks(p):
         try:
             out["translation_estimate"] = call("GET", f"/api/projects/{a['project_id']}/estimate")
         except ToolError:

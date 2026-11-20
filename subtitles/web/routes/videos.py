@@ -6,7 +6,7 @@ import subprocess
 from pathlib import Path
 from urllib.parse import unquote
 
-from ... import config, folder, i18n, language, source, space
+from ... import config, folder, i18n, language, source, space, translation
 from ...project import sources
 from .. import service
 from ..playlist import PlaylistDownload
@@ -65,6 +65,20 @@ def estimate_task(req, id):
     if e is None:
         raise RequestError(404, i18n.t("err.task_not_prepared"))
     return 200, e
+
+
+@route("POST", "/api/tasks/{id}/language")
+def language_of_task(req, id):
+    """{engine?}: asks a model of the settings (by default the active translator) which language is spoken in a video
+    whose transcription is doubtful and waits for that → {code, engine, name} (`code` "": the model did not say).
+    One short request to that model: a paid one is billed (see `opinion_models` of the estimate of the project)."""
+    try:
+        opinion = service.manager.queue.language_opinion(id, req.json().get("engine"))
+    except (translation.TranslationError, config.ConfigError, OSError) as e:
+        raise RequestError(502, str(e)) from None
+    if opinion is None:
+        raise RequestError(409, i18n.t("err.task_not_paused"))
+    return 200, opinion
 
 
 @route("POST", "/api/tasks/{id}/translate")

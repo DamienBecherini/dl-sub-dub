@@ -1,0 +1,3 @@
+# Español (Spanish): its function words (see language.py; how to add or improve a list: docs/reference.md).
+# Measured 20/11/2026: 25 % of the words of film subtitles (OpenSubtitles 2018).
+el la los las y es que en un una por para con no se del al como más pero sus también muy

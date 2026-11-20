@@ -159,5 +159,47 @@ def test_what_the_page_is_sent(tmp_path):
     assert json.loads(json.dumps(rules.item_view(ctx(p, dubbing=False), p, f)))["stages"]["dubbing"]["blocking"]
     r = json.loads(json.dumps(rules.project_view(c, p)))
     assert r["run"] == {"steps": ["download", "subtitles", "dubbing"], "open": ["download", "subtitles", "dubbing"], "resume": True}
-    assert r["status"] == "suspended" and r["finished"] == 0 and not r["working"] and not r["locked"]
+    assert r["status"] == "suspended" and r["finished"] == 0 and not r["working"] and not r["locked"] and not r["go_ahead"]
     assert r["steps"]["subtitles"] == {"ready": 1, "waiting": 1, "why": "download"}
+
+
+def test_a_video_run_on_its_own_leaves_run_nothing_to_start(tmp_path):
+    """Run from its line in a project that does not run: Run has nothing to take for a step already at work (its button
+    waits), and the project says "running", not "done"."""
+    p, f, a = project(tmp_path, stages=[SUB])
+    p.items = [f]
+    at(f, SUB, S.RUNNING)
+    for state in ("done", "suspended"):
+        r = rules.project_view(ctx(p, state=state, started=True), p)
+        assert r["run"] == {"steps": [SUB], "open": [], "resume": False} and r["working"]
+    assert rules.status(ctx(p, state="done", started=True), p) == "running"
+    assert rules.status(ctx(p, state="suspended", started=True), p) == "running"        # a project paused or never run, too
+    assert rules.status(ctx(p, state="suspended", started=True, finishing=frozenset({f.id})), p) == "suspended"   # paused after the videos at work: it ends
+    assert rules.status(ctx(p, state="running", started=True), p) == "running" and not rules.alone(ctx(p, state="running"), p)
+    f.tick(DUB, True)                                                                  # something more ticked: Run takes it
+    p.stages = [SUB, DUB]
+    assert rules.project_view(ctx(p, state="done", started=True), p)["run"]["open"] == [DUB]
+    at(f, SUB, S.DONE)
+    f.tick(DUB, False)
+    assert rules.status(ctx(p, state="done", started=True), p) == "done"
+
+
+def test_a_video_that_waits_on_its_own_asks_for_the_go_ahead(tmp_path):
+    """Its task stopped before a paid model, in a project that does not run: the go-ahead is asked above the list as
+    for a project that stopped for it. While the project runs, the videos transcribed wait for the others."""
+    p, f, a = project(tmp_path, stages=[SUB])
+    p.items = [f]
+    at(f, SUB, S.PAUSED)
+    for state in ("done", "suspended"):
+        c = ctx(p, state=state, started=True)
+        assert rules.asks(c, p) and rules.status(c, p) == "awaiting_translation"
+        r = rules.project_view(c, p)
+        assert r["go_ahead"] and r["run"]["open"] == [SUB] and not r["working"]
+    assert rules.asks(ctx(p, state="awaiting_translation", started=True), p)
+    running = ctx(p, state="running", started=True)
+    assert not rules.asks(running, p) and rules.status(running, p) == "running"
+    paused = ctx(p, state="suspended", started=True, agreed=frozenset({f.id}))       # it had the go-ahead and waits for its turn
+    assert not rules.asks(paused, p) and rules.status(paused, p) == "suspended" and not rules.project_view(paused, p)["go_ahead"]
+    assert not rules.asks(ctx(p, state="cancelled", started=True), p)
+    f.selected = False                                                                 # unticked: asks for nothing
+    assert not rules.asks(ctx(p, state="done", started=True), p)

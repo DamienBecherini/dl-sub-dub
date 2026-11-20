@@ -30,7 +30,7 @@ L'outil tourne sur votre machine, avec les moteurs que vous choisissez :
 
 ![La page : chaque vidéo avec ses cases d'étapes, son état dans chacune, ses propres réglages et son journal](docs/images/fr/workshop-dark.png)
 
-**Ce que montre ce dépôt :** un paquet Python sans aucune dépendance hors de la bibliothèque standard (`dependencies = []` dans [pyproject.toml](pyproject.toml)), qui pilote FFmpeg et yt-dlp en sous-processus. La transcription arrive avec l'horodatage de chaque mot, depuis un serveur que vous faites tourner, [transcription-handy-like](https://github.com/DamienBecherini/transcription-handy-like/blob/main/README.fr.md) ou tout serveur compatible OpenAI ; la traduction passe par une IA locale, l'API Claude, Claude Code ou toute API compatible OpenAI. 526 tests pytest, où les moteurs, yt-dlp et le doublage sont simulés et où rien ne passe par le réseau, tournent avec un lint ruff à chaque push et à chaque pull request (Python 3.11 et la dernière version stable).
+**Ce que montre ce dépôt :** un paquet Python sans aucune dépendance hors de la bibliothèque standard (`dependencies = []` dans [pyproject.toml](pyproject.toml)), qui pilote FFmpeg et yt-dlp en sous-processus. La transcription arrive avec l'horodatage de chaque mot, depuis un serveur que vous faites tourner, [transcription-handy-like](https://github.com/DamienBecherini/transcription-handy-like/blob/main/README.fr.md) ou tout serveur compatible OpenAI ; la traduction passe par une IA locale, l'API Claude, Claude Code ou toute API compatible OpenAI. 574 tests pytest, où les moteurs, yt-dlp et le doublage sont simulés et où rien ne passe par le réseau, tournent avec un lint ruff à chaque push et à chaque pull request (Python 3.11 et la dernière version stable) ; six d'entre eux pilotent la page dans un vrai navigateur (Playwright).
 
 ## Pourquoi
 
@@ -315,6 +315,7 @@ pas d'authentification : elle n'écoute que sur la machine elle-même, et refuse
 | `POST /api/tasks` `{source, languages?, translator?, transcription?, output_dir?, pause?, spend_agreed?}` | une vidéo (fichier ou adresse) → tâche |
 | `GET /api/tasks/<id>?since=N` | état, étape en cours, lignes du journal à partir de N |
 | `POST /api/tasks/<id>/translate` `{translator?, languages?}` | suite d'une tâche en pause avant la traduction |
+| `POST /api/tasks/<id>/language` `{engine?}` | demande à un modèle quelle langue est parlée dans une vidéo en pause parce que sa transcription est douteuse → `{code, engine, name}` |
 | `POST /api/folder` `{path}` puis `GET /api/folder/<id>?videos=1` | inventaire des vidéos d'un dossier |
 | `POST /api/youtube` `{url}` | titre et durée d'une adresse de vidéo, ou la playlist qu'elle désigne, sans rien télécharger |
 | `POST /api/playlist` `{url}` puis `GET /api/playlist/<id>` | télécharger toute une playlist dans un dossier, à ouvrir ensuite avec `/api/folder` |

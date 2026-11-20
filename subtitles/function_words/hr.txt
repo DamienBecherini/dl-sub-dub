@@ -1,0 +1,3 @@
+# Hrvatski (Croatian): its function words (see language.py; how to add or improve a list: docs/reference.md).
+# Measured 20/11/2026: 29 % of the words of film subtitles (OpenSubtitles 2018).
+je i u da se na ne to sam za što s a od li su će mi ti ali kako bi ga sa nije smo

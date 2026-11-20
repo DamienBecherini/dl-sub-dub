@@ -1,0 +1,4 @@
+# Deutsch (German): its function words (see language.py; how to add or improve a list: docs/reference.md).
+# Measured 20/11/2026: 26 % of the words of film subtitles (OpenSubtitles 2018),
+# 29.2 % of the words of one real transcription (Parakeet).
+der die das und ist nicht ich sie es ein eine zu den mit auf für von wir auch dass im nach wie

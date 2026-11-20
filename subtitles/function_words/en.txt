@@ -1,0 +1,4 @@
+# English: its function words (see language.py; how to add or improve a list: docs/reference.md).
+# Measured 20/11/2026: 26 % of the words of film subtitles (OpenSubtitles 2018),
+# 28.6 to 36.9 % of the words of 264 real transcriptions (Parakeet).
+the and is are to of that in it you for with this on was have not but they we can will from be as

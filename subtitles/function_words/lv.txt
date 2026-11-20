@@ -1,0 +1,3 @@
+# Latviešu (Latvian): its function words (see language.py; how to add or improve a list: docs/reference.md).
+# Measured 20/11/2026: 25 % of the words of film subtitles (OpenSubtitles 2018).
+ir un es ka to tu nav par ar no kas bet viņš man tas vai kā uz jā mēs lai tā jau bija

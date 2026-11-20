@@ -1,0 +1,4 @@
+# Français (French): its function words (see language.py; how to add or improve a list: docs/reference.md).
+# Measured 20/11/2026: 24 % of the words of film subtitles (OpenSubtitles 2018),
+# 16.7 to 30.5 % of the words of 21 real transcriptions (Parakeet).
+le la les un une des et est que qui dans pour pas ce il elle nous vous sur avec mais plus très sont être au du

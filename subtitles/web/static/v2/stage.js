@@ -3,8 +3,9 @@
    Open once done), the controls of the running project (Pause, Stop), and the details of each step. */
 import { DownloadDetails } from "./download.js";
 import { DubbingDetails, oneAtATime } from "./dubbing.js";
-import { act, api, busy, duration, html, languageName, T, Tip } from "./lib.js";
-import { SubtitleDetails } from "./subtitles.js";
+import { useState } from "/static/vendor/preact-htm.js";
+import { act, api, busy, Confirm, duration, html, languageName, languagesOf, T, Tip } from "./lib.js";
+import { costText, SubtitleDetails } from "./subtitles.js";
 
 export const DETAILS = { download: DownloadDetails, subtitles: SubtitleDetails, dubbing: DubbingDetails };
 
@@ -139,11 +140,45 @@ const ACTIONS = {
   cancel: () => ({ label: T("v2.line.cancel"), title: T("v2.line.cancel_title"), call: "cancel", icon: "cancel" }),
 };
 
+/* What the go-ahead for one video starts, read in the estimate of its task: the AI review when its cost is what it
+   waits for, then the translation, each with its model and what it costs. */
+function goAheadLines(p, item, e) {
+  const lines = [];
+  if (e.doubt) lines.push(T("v2.line.agree_doubt", { share: Math.round(e.doubt.share * 100), usual: Math.round(e.doubt.usual * 100) }));   // its language is doubtful
+  const reviewer = ["language", "review"].includes(e.waits) && e.review ? e.review.translators.find((t) => t.id === e.review.engine) : null;
+  if (reviewer) lines.push(T("v2.line.agree_review", { name: reviewer.name, cost: costText(reviewer, true) }));
+  const id = item.overrides.translator || p.subtitles.translator;
+  const translator = e.languages?.length ? e.translators.find((t) => t.id === id) : null;
+  if (translator) lines.push(T("v2.line.agree_translation", { langs: languagesOf(e.languages), name: translator.name, cost: costText(translator, true) }));
+  if (e.waits === "validation") lines.push(T("v2.sub.validation_help"));
+  return lines;
+}
+
+/* The go-ahead for one video, from its line: what it starts and what it costs is asked for and shown first, and the
+   click on the line only opens that question. A paid model never starts from a click that did not show its cost. */
+function GoAheadButton({ p, item, step, a, icons }) {
+  const [ask, setAsk] = useState(null);                  // the estimate of its task, while the question is open
+  const open = async () => {
+    const e = await busy("", () => api("GET", `/api/tasks/${item.stages[step].task}/estimate`));
+    if (e) setAsk(e);
+  };
+  const go = () => { setAsk(null); act(`/api/projects/${p.id}/items/${item.id}/${a.call}`, { stage: step }); };
+  const lines = ask ? goAheadLines(p, item, ask) : [];
+  return html`
+    ${icons
+      ? html`<button type="button" class="small icon-act" title=${`${a.label} : ${a.title}`} aria-label=${a.label} onClick=${open}>${actIcon(a.icon)}</button>`
+      : html`<button type="button" class="small" title=${a.title} onClick=${open}>${a.label}</button>`}
+    ${ask && html`
+      <${Confirm} title=${T("v2.line.agree_title")} yes=${T("v2.line.agree")} danger=${false} onYes=${go} onNo=${() => setAsk(null)}
+                  text=${[item.title || item.source, ...lines].flatMap((l, n) => (n ? [html`<br />`, l] : [html`<strong>${l}</strong>`]))} />`}`;
+}
+
 export function LineButtons({ p, item, step, icons = false }) {
   const st = item.stages[step];
   if (!st.actions.length) return st.lacks ? html`<span class="help" title=${lackText(p, item, step)}>${lackShort(st.lacks)}</span>` : null;
   return st.actions.map((name) => {
     if (name === "play") return html`<${PlayButton} key=${name} item=${item} step=${step} icons=${icons} />`;
+    if (name === "translate") return html`<${GoAheadButton} key=${name} p=${p} item=${item} step=${step} a=${ACTIONS[name](step)} icons=${icons} />`;
     if (name === "one_at_a_time") return html`
       <button key=${name} type="button" class="small" title=${T("v2.gpu.one_title")} onClick=${() => oneAtATime(p)}>${T("v2.gpu.one_at_a_time")}</button>`;
     const a = ACTIONS[name](step);
