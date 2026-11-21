@@ -87,7 +87,13 @@ class Model:
                 return json.dumps({"corrections": s.lines.pop(0) if s.lines else []})
             return json.dumps({"entries": s.review.pop(0) if s.review else []})
         s.asked.append(("translation", self.engine["id"]))
-        assert s.free.wait(30), "the test never let the translation go on"
+        for _ in range(600):                                           # as a real request stops when its task is cancelled
+            if s.free.wait(0.05):
+                break
+            if any(t.cancel_requested for t in s.manager.queue.tasks.values()):
+                raise translation.TranslationError("cancelled while it translated")
+        else:
+            raise AssertionError("the test never let the translation go on")
         if s.failing:
             raise translation.TranslationError(s.failing)
         lines = _LINE.findall(request.split("Lignes à traduire :")[-1])
