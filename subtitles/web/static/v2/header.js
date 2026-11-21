@@ -4,6 +4,7 @@
 /* global I18N, autonym, pickLanguage, useLanguage */
 import { useEffect, useLayoutEffect, useRef, useState } from "/static/vendor/preact-htm.js";
 import { api, html, keepInside, T, update, useMenu } from "./lib.js";
+import { FeedbackButton } from "./feedback.js";
 import { NotifyButton } from "./notify.js";
 import { applyTheme, remember, ThemeDialog } from "./themes.js";
 
@@ -72,9 +73,10 @@ function ZoomButtons() {
             disabled=${!window.textZoom.canGrow()} onClick=${() => window.textZoom.step(1)}>${zoomIcon(true)}</button>`;
 }
 
-/* notify: the bell of the notifications is shown (web.notify_button of the settings, true by default); settingsLink:
+/* notify: the bell of the notifications is shown (web.notify_button of the settings, true by default); feedback: the
+   button "Give my opinion" (web.feedback_button, true by default; it stays in the footer); settingsLink:
    the link to the Settings (not on the Settings page itself); onLanguage: called once the language changed. */
-export function HeaderButtons({ notify = true, settingsLink = true, onLanguage }) {
+export function HeaderButtons({ notify = true, feedback = true, settingsLink = true, onLanguage }) {
   const redraw = useRedraw();
   const [themeOpen, setThemeOpen] = useState(false);
   useEffect(() => {                                 // the system's mode changes (evening): follow it
@@ -86,6 +88,7 @@ export function HeaderButtons({ notify = true, settingsLink = true, onLanguage }
   const dark = currentMode() === "dark";
   const toggleTitle = dark ? T("ui.theme.to_light") : T("ui.theme.to_dark");
   return html`
+    ${feedback && html`<${FeedbackButton} />`}
     <${ZoomButtons} />
     <button type="button" class="secondary theme" title=${toggleTitle} aria-label=${toggleTitle}
             onClick=${() => { setMode(dark ? "light" : "dark"); redraw(); }}><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="2" /><path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor" /></svg></button>

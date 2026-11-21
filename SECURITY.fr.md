@@ -116,5 +116,9 @@ L'outil ne le vérifie pas à votre place.
 
 ## Signaler un problème
 
-Ouvrez un ticket sur le dépôt, ou écrivez à l'auteur via [damien.becherini.fr](https://damien.becherini.fr) pour ce
-que vous préférez ne pas rendre public tout de suite.
+**Donner mon avis**, dans la page, prépare le signalement et n'envoie rien lui-même : un ticket du dépôt pour un avis,
+un bug ou une idée, et pour une faille de sécurité le signalement privé du dépôt (onglet Security, « Report a
+vulnerability »), jamais un ticket public, ou un e-mail à l'auteur. Ce qu'il joint est montré avant : la version, et
+seulement si vous cochez la case le système, Python et les sortes de moteurs (local ou distant, leur type), jamais un
+chemin, une adresse ni un nom (`GET /api/about`). Sans la page : ouvrez un ticket, utilisez le signalement privé de
+l'onglet Security, ou écrivez à l'auteur via [damien.becherini.fr](https://damien.becherini.fr).

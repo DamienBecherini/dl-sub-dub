@@ -109,5 +109,9 @@ not check it for you.
 
 ## Reporting a problem
 
-Open an issue on the repository, or write to the author through [damien.becherini.fr](https://damien.becherini.fr)
-for anything you would rather not make public at once.
+**Give my opinion**, in the page, prepares the report and sends nothing itself: an issue of the repository for an
+opinion, a bug or an idea, and for a security flaw the private report of the repository (Security tab, « Report a
+vulnerability »), never a public issue, or an e-mail to the author. What it attaches is shown before: the version, and
+only if you tick it the system, Python and the kinds of the engines (local or remote, their type), never a path, an
+address or a name (`GET /api/about`). Without the page: open an issue, use the private report of the Security tab, or
+write to the author through [damien.becherini.fr](https://damien.becherini.fr).

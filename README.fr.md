@@ -30,7 +30,7 @@ L'outil tourne sur votre machine, avec les moteurs que vous choisissez :
 
 ![La page : chaque vidéo avec ses cases d'étapes, son état dans chacune, ses propres réglages et son journal](docs/images/fr/workshop-dark.png)
 
-**Ce que montre ce dépôt :** un paquet Python sans aucune dépendance hors de la bibliothèque standard (`dependencies = []` dans [pyproject.toml](pyproject.toml)), qui pilote FFmpeg et yt-dlp en sous-processus. La transcription arrive avec l'horodatage de chaque mot, depuis un serveur que vous faites tourner, [transcription-handy-like](https://github.com/DamienBecherini/transcription-handy-like/blob/main/README.fr.md) ou tout serveur compatible OpenAI ; la traduction passe par une IA locale, l'API Claude, Claude Code ou toute API compatible OpenAI. 623 tests pytest, où les moteurs, yt-dlp et le doublage sont simulés et où rien ne passe par le réseau, tournent avec un lint ruff à chaque push et à chaque pull request (Python 3.11 et la dernière version stable) ; 26 d'entre eux pilotent la page dans un vrai navigateur (Playwright), sur de vraies petites vidéos.
+**Ce que montre ce dépôt :** un paquet Python sans aucune dépendance hors de la bibliothèque standard (`dependencies = []` dans [pyproject.toml](pyproject.toml)), qui pilote FFmpeg et yt-dlp en sous-processus. La transcription arrive avec l'horodatage de chaque mot, depuis un serveur que vous faites tourner, [transcription-handy-like](https://github.com/DamienBecherini/transcription-handy-like/blob/main/README.fr.md) ou tout serveur compatible OpenAI ; la traduction passe par une IA locale, l'API Claude, Claude Code ou toute API compatible OpenAI. 628 tests pytest, où les moteurs, yt-dlp et le doublage sont simulés et où rien ne passe par le réseau, tournent avec un lint ruff à chaque push et à chaque pull request (Python 3.11 et la dernière version stable) ; 29 d'entre eux pilotent la page dans un vrai navigateur (Playwright), sur de vraies petites vidéos.
 
 ## Pourquoi
 
@@ -266,6 +266,8 @@ Puis, dans **Réglages › Doublage** : activez-le, donnez la commande (le Pytho
 
 Ajoutez des vidéos, cochez les langues, cliquez sur **Lancer**. Le reste se découvre sur place : chaque réglage a un **?** qui l'explique, et chaque icône d'état dit ce qu'elle signifie au survol ou d'un toucher. Chaque vidéo a aussi son bouton et son menu **▾**, pour lancer une ou plusieurs de ses étapes sans toucher aux autres.
 
+**Donner mon avis**, dans l'en-tête et en bas de la page : une note sur cinq, un avis, un bug ou une idée, tout est facultatif. L'outil n'envoie rien : vous ouvrez un ticket GitHub déjà rempli (public, avec un compte), envoyez un e-mail (sans compte) ou copiez le texte, et vous voyez avant ce qui sera envoyé. Rien de votre travail n'est joint (ni vidéo, ni projet, ni chemin) ; les informations techniques (système, Python, les sortes de moteurs) seulement si vous cochez la case. Une faille de sécurité se signale en privé, jamais dans un ticket public. Le bouton de l'en-tête peut être masqué (Réglages, Application) ; il reste en bas.
+
 ### La ligne de commande
 
 ```
@@ -331,6 +333,7 @@ pas d'authentification : elle n'écoute que sur la machine elle-même, et refuse
 | `POST /api/projects/<id>/start` `{stages?, only?}` (sans `stages` : les étapes cochées), `/select`, `/settings`, `/items/<item>/run` `{stage}` (ou `{stages}` : l'une après l'autre), `/items/<item>/cancel` | lancer des étapes, cocher, réglages, une vidéo une étape (ou plusieurs à la suite) |
 | `GET /api/projects/<id>/items/<item>/log` | le journal du téléchargement d'une vidéo |
 | `GET /api/health` | occupé ou non, activité, temps restant ([référence](docs/reference.fr.md#le-service)) |
+| `GET /api/about` | la version, le dépôt, et ce que « Donner mon avis » peut joindre : système, Python, les sortes de moteurs (jamais une adresse) |
 
 ```
 curl -s -X POST localhost:4420/api/projects -H "Content-Type: application/json"   -d '{"items": [{"source": "D:/Séries/S1/e01.mkv"}], "settings": {"languages": ["fr"], "spend_agreed": true}, "start": true}'

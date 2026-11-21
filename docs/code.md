@@ -11,9 +11,9 @@ and resumes, and why it is built this way.**
 
 ---
 
-About 10,000 lines of Python in [`subtitles/`](../subtitles/), no dependency outside the standard library for the
-service itself (the Claude SDK and the dubbing environment are optional), a page of about 3,000 lines of JavaScript
-with no build step, and about 530 tests that run without a transcription server, a model or a network, with a ruff lint, on every push
+About 12,000 lines of Python in [`subtitles/`](../subtitles/), no dependency outside the standard library for the
+service itself (the Claude SDK and the dubbing environment are optional), a page of about 4,000 lines of JavaScript
+with no build step, and about 620 tests that run without a transcription server, a model or a network, with a ruff lint, on every push
 and pull request ([`.github/workflows/ci.yml`](../.github/workflows/ci.yml)).
 
 > The flow works in four steps (Select → Download → Subtitles → Dubbing), on the page as on the command line
@@ -481,6 +481,7 @@ flowchart LR
   main --> header["header.js<br/><i>language, zoom, notifications</i>"]
   header --> themes["themes.js<br/><i>palettes, contrast</i>"]
   main --> notify["notify.js<br/><i>browser notifications</i>"]
+  header --> feedback["feedback.js<br/><i>Give my opinion</i>"]
   main --> ytdlp["ytdlp.js<br/><i>age, update</i>"]
   main --> workshop["workshop.js<br/><i>project settings, the list, its lines</i>"]
   workshop --> select["select.js<br/><i>videos, project, its place</i>"]

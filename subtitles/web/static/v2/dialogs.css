@@ -80,3 +80,40 @@
   @media (max-width: 760px) { width: 100%; min-width: 0; max-width: 100%; }
 }
 button.danger-primary { background: var(--error); border-color: var(--error); color: #fff; }
+
+/* « Give my opinion » (feedback.js): the button, in the header (narrow window: its icon alone) and quieter in the
+   footer, and its window: the stars, the kind, the message, what will be sent and the ways to send it. */
+.feedback-button { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; font-weight: 600;
+  color: var(--accent); border-color: var(--accent);
+  svg { flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  &.quiet { font-weight: 500; font-size: 13px; color: inherit; border: 1px solid var(--border); background: transparent;
+    padding: 3px 10px; min-height: 0; margin-left: 6px; vertical-align: middle; }
+}
+@media (max-width: 760px) { header .feedback-button span { display: none; } header .feedback-button { padding: 0 9px; } }
+.feedback-dialog { width: min(640px, 94vw); max-width: 94vw;
+  fieldset { border: 0; padding: 0; margin: 14px 0 0; min-width: 0; }
+  legend, label.field { font-weight: 600; padding: 0; margin: 14px 0 6px; display: block; }
+  textarea { width: 100%; min-height: 120px; box-sizing: border-box; font: inherit; }
+  .check { margin-top: 10px; }
+  details { margin: 10px 0; } summary { cursor: pointer; }
+  pre { white-space: pre-wrap; word-break: break-word; font-size: 13px; background: var(--drop); padding: 8px 10px; border-radius: 6px; }
+  .mode-switch { flex-wrap: wrap; }
+}
+.feedback-dialog .stars { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 4px;
+  legend { flex-basis: 100%; }
+  label { cursor: pointer; line-height: 1; border-radius: 6px; }
+  input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+  label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+}
+/* Not chosen: an outline; chosen: a full star (the shape says it, not the colour alone) */
+.feedback-dialog .star { display: inline-grid; place-items: center; width: 40px; height: 40px; font-size: 30px; color: transparent;
+  -webkit-text-stroke: 1.5px var(--muted); }
+.feedback-dialog .star.on, .feedback-dialog .stars label:hover .star { color: var(--attention); -webkit-text-stroke: 1.5px var(--attention); }
+.feedback-dialog .stars-said { margin: 0 8px; }
+.feedback-send { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px 16px; margin-top: 12px;
+  p { margin: 6px 0 0; }
+  .button-link { display: inline-block; }
+  .button-link.primary { background: var(--accent); color: var(--accent-text, #fff); border-color: var(--accent); font-weight: 600; }
+  .button-link.disabled { opacity: .5; cursor: default; }
+}
+.feedback-dialog .feedback-security { margin: 16px 0 0; padding-top: 10px; border-top: 1px solid var(--border); }

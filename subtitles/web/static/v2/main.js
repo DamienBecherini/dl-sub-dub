@@ -5,6 +5,7 @@
    The project is created by the first video read (select.js); it is then read from the service as it changes. */
 /* global loadTranslations, translatePage */
 import { render, useEffect } from "/static/vendor/preact-htm.js";
+import { FeedbackButton } from "./feedback.js";
 import { HeaderButtons } from "./header.js";
 import { useNotifications } from "./notify.js";
 import { api, busy, getState, html, itemsOf, stateKey, T, tickedStages, update, useMenu, useStore } from "./lib.js";
@@ -125,7 +126,7 @@ function App() {
       ${p && html`<span class="project-title">${p.title || p.root}</span>`}
       <span class="spacer"></span>
       ${s.projectId && html`<button type="button" class="secondary small" onClick=${newProject}>${T("v2.project.new")}</button>`}
-      <${HeaderButtons} notify=${s.config?.web?.notify_button !== false} />
+      <${HeaderButtons} notify=${s.config?.web?.notify_button !== false} feedback=${s.config?.web?.feedback_button !== false} />
     </header>
     <main>
       ${s.error && html`<p class="error">${s.error}</p>`}
@@ -151,5 +152,6 @@ function App() {
 (async () => {
   await loadTranslations();
   translatePage(document.querySelector("footer.signature"));
+  render(html`<${FeedbackButton} quiet=${true} />`, document.querySelector("footer.signature .feedback-footer"));
   render(html`<${App} />`, document.getElementById("app"));
 })();

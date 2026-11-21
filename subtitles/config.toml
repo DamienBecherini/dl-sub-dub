@@ -151,5 +151,6 @@ replace = false                            # with the dubbing, the MKV replaces 
 port = 4420
 idle_min = 60                              # the interface stops after this time without action or running work (0 = never)
 compact_meta = "below"                     # the compact list: the kind and duration under the title ("below") or after it ("inline")
+feedback_button = true                     # the button "Give my opinion" in the header of the page (it stays in the footer when hidden)
 notify_button = true                       # the bell of the browser notifications in the header of the page (off until clicked)
 github = "https://github.com/DamienBecherini/dl-sub-dub"   # address of the public repository (link in the page header; greyed out while empty)

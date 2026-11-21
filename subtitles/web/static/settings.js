@@ -76,6 +76,7 @@ function fillSettings() {
   $("#cfg-chunk").value = (c.translation || {}).chunk_size || 25;
   $("#cfg-idle").value = (c.web || {}).idle_min ?? 60;
   $("#cfg-notify-button").checked = (c.web || {}).notify_button !== false;
+  $("#cfg-feedback-button").checked = (c.web || {}).feedback_button !== false;
   $("#cfg-compact-meta").value = (c.web || {}).compact_meta === "inline" ? "inline" : "below";
   $("#cfg-cpl").value = s.chars_per_line ?? 42; $("#cfg-lines").value = s.lines ?? 2; $("#cfg-dmax").value = s.max_duration ?? 6;
   $("#cfg-dmin").value = s.min_duration ?? 1; $("#cfg-pause").value = s.split_pause ?? 0.6; $("#cfg-cps").value = s.reading_cps ?? 17;
@@ -136,7 +137,7 @@ function showSummaries() {
     layout: T("ui.cfg.sum.layout", { n: Number(v("#cfg-lines")), lines: v("#cfg-lines"), cpl: v("#cfg-cpl") }),
     folders: v("#cfg-output-dir") || "—",
     app: [Number(v("#cfg-idle")) ? T("ui.cfg.sum.idle", { n: v("#cfg-idle") }) : T("ui.cfg.sum.no_idle"),
-          $("#cfg-notify-button").checked ? T("ui.cfg.sum.notify") : ""].filter(Boolean).join(" · "),
+          $("#cfg-notify-button").checked ? T("ui.cfg.sum.notify") : "", $("#cfg-feedback-button").checked ? T("ui.cfg.sum.feedback") : ""].filter(Boolean).join(" · "),
   };
   for (const [cat, text] of Object.entries(sums)) {
     const el = document.querySelector(`.cfg-sum[data-sum="${cat}"]`);
@@ -261,6 +262,7 @@ async function save() {
                   max_height: Number($("#cfg-max-height").value) || 0, extra_args: splitArguments($("#cfg-ytdlp-extra").value) };
     c.translation = { ...(c.translation || {}), chunk_size: Number($("#cfg-chunk").value) || 25 };
     c.web = { ...(c.web || {}), idle_min: Number($("#cfg-idle").value) || 0, notify_button: $("#cfg-notify-button").checked,
+              feedback_button: $("#cfg-feedback-button").checked,
               compact_meta: $("#cfg-compact-meta").value };
     c.subtitles = { chars_per_line: Number($("#cfg-cpl").value), lines: Number($("#cfg-lines").value), max_duration: Number($("#cfg-dmax").value),
                     min_duration: Number($("#cfg-dmin").value), split_pause: Number($("#cfg-pause").value), min_gap: (c.subtitles || {}).min_gap ?? 0.08,

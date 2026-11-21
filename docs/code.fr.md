@@ -11,9 +11,9 @@ comment il s'arrête et reprend, et pourquoi il est construit ainsi.**
 
 ---
 
-Environ 10 000 lignes de Python dans [`subtitles/`](../subtitles/), aucune dépendance hors de la bibliothèque standard
-pour le service lui-même (le SDK Claude et l'environnement de doublage sont facultatifs), une page d'environ 3 000
-lignes de JavaScript sans étape de build, et environ 530 tests qui tournent sans serveur de transcription, sans modèle
+Environ 12 000 lignes de Python dans [`subtitles/`](../subtitles/), aucune dépendance hors de la bibliothèque standard
+pour le service lui-même (le SDK Claude et l'environnement de doublage sont facultatifs), une page d'environ 4 000
+lignes de JavaScript sans étape de build, et environ 620 tests qui tournent sans serveur de transcription, sans modèle
 et sans réseau, avec un lint ruff, à chaque push et à chaque pull request
 ([`.github/workflows/ci.yml`](../.github/workflows/ci.yml)).
 
@@ -492,6 +492,7 @@ flowchart LR
   main --> header["header.js<br/><i>langue, zoom, notifications</i>"]
   header --> themes["themes.js<br/><i>palettes, contraste</i>"]
   main --> notify["notify.js<br/><i>notifications du navigateur</i>"]
+  header --> feedback["feedback.js<br/><i>Donner mon avis</i>"]
   main --> ytdlp["ytdlp.js<br/><i>âge, mise à jour</i>"]
   main --> workshop["workshop.js<br/><i>réglages du projet, la liste, ses lignes</i>"]
   workshop --> select["select.js<br/><i>vidéos, projet, son dossier</i>"]

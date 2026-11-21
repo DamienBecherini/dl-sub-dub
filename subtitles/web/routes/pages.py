@@ -4,7 +4,9 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from ... import config, i18n, local_transcription
+import platform
+
+from ... import __version__, config, i18n, local_transcription
 from .. import service
 from ..router import Raw, not_found, route
 
@@ -69,6 +71,34 @@ def languages(req):
 def get_health(req):
     """"local service" contract v2: {state, contract, service, version, busy, activity, remaining_work_s, idle}."""
     return 200, service.health()
+
+
+REPOSITORY = "https://github.com/DamienBecherini/dl-sub-dub"
+FEEDBACK_EMAIL = "dl-sub-dub@damien.becherini.fr"
+
+
+def _engine_kind(m: dict | None) -> str:
+    """What kind of engine, never where: its type for a translator (claude, claude_code, openai…), and "local" (on this
+    machine) or "remote"."""
+    if not m or m.get("type") == "none":
+        return "none"
+    url = (m.get("url") or "").lower()
+    here = bool(m.get("command")) or any(h in url for h in ("127.0.0.1", "localhost", "[::1]")) or m.get("type") == "claude_code"
+    return " ".join(x for x in (m.get("type") or "", "local" if here else "remote") if x)
+
+
+@route("GET", "/api/about")
+def about(req):
+    """For "Give my opinion" (static/v2/feedback.js): the version, where the code and the forms are, the address of the
+    author, and the technical information the user may attach (system, Python, window or browser, the kinds of the
+    engines and whether the dubbing is set up): never a path, an address, a name or a key."""
+    cfg = config.load()
+    engine = lambda kind, active: next((m for m in cfg.get(kind) or [] if m.get("id") == cfg.get(active)), None)   # noqa: E731
+    return 200, {"version": __version__, "repository": REPOSITORY, "feedback_email": FEEDBACK_EMAIL,
+                 "system": platform.system(), "python": platform.python_version(), "app": service.launched_by_app,
+                 "transcription": _engine_kind(engine("transcriptions", "active_transcription")),
+                 "translator": _engine_kind(engine("translators", "active_translator")),
+                 "dubbing": bool((cfg.get("dubbing") or {}).get("enabled"))}
 
 
 @route("GET", "/api/status")

@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.4 (2026-11-21)
+
+A button to give your opinion, report a bug or suggest an idea, from the page.
+
+- **Give my opinion**, in the header and at the bottom of the page, as in vault-watch and ia-on-prem: a note out of
+  five, an opinion, a bug or an idea, all optional. The tool sends nothing: it opens a GitHub issue already filled in
+  (the form `.github/ISSUE_TEMPLATE/feedback.yml`), an e-mail, or copies the text, and shows before what will be sent.
+  Nothing of the user's work goes with it; the technical information (system, Python, window or browser, the kinds of
+  the engines: `GET /api/about`) only when ticked. A security flaw goes to the private report of the repository,
+  never to a public issue. Settings, Application: the button of the header can be hidden (`web.feedback_button`);
+  it stays at the bottom.
+
 ## 0.3.3 (2026-11-21)
 
 The sure fixes of the AI review applied without asking, for a language you do not read; a video goes on by itself

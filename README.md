@@ -30,7 +30,7 @@ The tool runs on your machine, with the engines you choose:
 
 ![The page: each video with its boxes for the steps, its state in each one, its own settings and its log](docs/images/en/workshop-dark.png)
 
-**What this repository shows:** a Python package with no runtime dependency outside the standard library (`dependencies = []` in [pyproject.toml](pyproject.toml)), which drives FFmpeg and yt-dlp as subprocesses. The transcription comes with word timestamps from a server you run, [transcription-handy-like](https://github.com/DamienBecherini/transcription-handy-like) or any OpenAI-compatible one; the translation goes through a local LLM, the Claude API, Claude Code or any OpenAI-compatible API. 623 pytest tests, in which the engines, yt-dlp and the dubbing worker are fakes and nothing goes on the network, run with a ruff lint on every push and pull request (Python 3.11 and the latest stable release); 26 of them drive the page in a real browser (Playwright), on real small videos.
+**What this repository shows:** a Python package with no runtime dependency outside the standard library (`dependencies = []` in [pyproject.toml](pyproject.toml)), which drives FFmpeg and yt-dlp as subprocesses. The transcription comes with word timestamps from a server you run, [transcription-handy-like](https://github.com/DamienBecherini/transcription-handy-like) or any OpenAI-compatible one; the translation goes through a local LLM, the Claude API, Claude Code or any OpenAI-compatible API. 628 pytest tests, in which the engines, yt-dlp and the dubbing worker are fakes and nothing goes on the network, run with a ruff lint on every push and pull request (Python 3.11 and the latest stable release); 29 of them drive the page in a real browser (Playwright), on real small videos.
 
 ## Why
 
@@ -265,6 +265,8 @@ Then, in **Settings › Dubbing**: turn it on, give the command (the Python of t
 
 Add videos, tick the languages, click **Run**. The rest is found on the spot: each setting has a **?** that explains it, and each state icon says what it means on hover or on a tap. Each video also has its button and its **▾** menu, to run one or several of its steps without touching the others.
 
+**Give my opinion**, in the header and at the bottom of the page: a note out of five, an opinion, a bug or an idea, all optional. The tool sends nothing: you open a GitHub issue already filled in (public, with an account), send an e-mail (no account) or copy the text, and you see what will be sent before. Nothing of your work goes with it (no video, no project, no path); the technical information (system, Python, the kinds of the engines) only if you tick it. A security flaw is reported privately, never in a public issue. The button of the header can be hidden (Settings, Application); it stays at the bottom.
+
 ### The command line
 
 ```
@@ -329,6 +331,7 @@ The web page uses a local JSON API on `http://127.0.0.1:4420`, which scripts can
 | `POST /api/projects/<id>/start` `{stages?, only?}` (without `stages`: the steps ticked), `/select`, `/settings`, `/items/<item>/run` `{stage}` (or `{stages}`: one after the other), `/items/<item>/cancel` | run steps, tick, settings, one video one step (or several in a row) |
 | `GET /api/projects/<id>/items/<item>/log` | the log of the download of a video |
 | `GET /api/health` | busy or not, activity, time left ([reference](docs/reference.md#the-service)) |
+| `GET /api/about` | the version, the repository, and what « Give my opinion » may attach: system, Python, the kinds of the engines (never an address) |
 
 ```
 curl -s -X POST localhost:4420/api/projects -H "Content-Type: application/json"   -d '{"items": [{"source": "D:/Series/S1/e01.mkv"}], "settings": {"languages": ["fr"], "spend_agreed": true}, "start": true}'
