@@ -539,9 +539,9 @@ def test_a_project_stops_for_the_cost_then_for_the_lines_then_translates(monkeyp
     assert lines["title"] == "Episode 1.mp4" and [c["line"] for c in lines["corrections"]] == [1, 3]
     assert not run.videos[0]["validated"]
     decisions = [{"item": lines["item"], "id": c["id"], "accept": c["confidence"] != "low"} for c in lines["corrections"]]
-    assert g.projects.validate_names("L", [], decisions) == {"accepted": 0, "rejected": 0, "lines_accepted": 1, "lines_rejected": 1}
+    assert g.projects.validate_names("L", [], decisions) == {"accepted": 0, "rejected": 0, "lines_accepted": 1, "lines_rejected": 1, "taken_back": 0}
     assert run.videos[0]["validated"] and g.projects.proposals("L")["corrections"] == []
-    assert g.projects.translate("L", None, None)
+    assert run.state == "running" and not run.summary()["rules"]["go_ahead"]      # decided, and its translator is free: no second click
     turn()
     assert run.state == "done" and translated == [["We met Peter in the laboratory.", "He works on the genome.", "Thank you for watching!", "The cells emit light."]]
 

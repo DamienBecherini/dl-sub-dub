@@ -17,6 +17,8 @@ The keys (a layer may hold only some of them):
   subtitle of each video); `True`, written by older versions, reads as "names" (review.mode).
 - `review_engine`: id of the translator that reviews ("" = a Claude translator if there is one, otherwise the
   translator of the project; see review.engine).
+- `review_auto`: the fixes the reviewing model says sure are applied without a question, and the others do not make
+  the project wait (they stay to decide, not applied); see TaskQueue._fixes_alone. A removed line is never one of them.
 - `spend_agreed`: the user said, in the go-ahead panel of this project, not to be asked any more before a paid model
   (AI review, translation) runs; otherwise a paid model always waits for a go-ahead.
 - `stop`: how far the work goes: "validation" (names reviewed), "translation" (subtitles), "dubbing" (a dubbed
@@ -42,22 +44,32 @@ DEFAULT_DESTINATION = {"next_to_video": True, "output_dir": False}
 
 
 def defaults(cfg: dict) -> dict:
-    """The bottom layer: the configuration (config.toml merged with the user's config.json); [projects] holds the
-    defaults of a project chosen in the Settings (order, pause, review, mkv, replace)."""
-    p = cfg.get("projects") or {}
-    flag = lambda key: p[key] if isinstance(p.get(key), bool) else None                 # noqa: E731 - absent: None
+    """The bottom layer: the configuration (config.toml merged with the user's config.json), and what a project does
+    when nothing was chosen for it. What the Settings give a new project is not here: it is written in the project
+    when it is made (`starting`), so that the page shows what the work does."""
     return {"language": cfg.get("language") or "", "languages": language.normalize_codes(cfg.get("target_languages") or ["fr"]),
             "transcription": "", "translator": "", "destination": {**DEFAULT_DESTINATION, **(cfg.get("destination") or {})},
-            "output_dir": cfg.get("output_dir") or "", "pause": True if p.get("pause") is True else None, "review": review.mode(p.get("review")),
-            "review_engine": str(p.get("review_engine") or ""), "spend_agreed": False, "stop": "translation",
-            "replace": bool(p.get("replace")), "mkv": flag("mkv"), "dub_language": "",
-            "order": p.get("order") if p.get("order") in ("steps", "videos") else "steps",
+            "output_dir": cfg.get("output_dir") or "", "pause": None, "review": "", "review_engine": "", "review_auto": False,
+            "spend_agreed": False, "stop": "translation", "replace": False, "mkv": None, "dub_language": "", "order": "steps",
             "max_height": (cfg.get("youtube") or {}).get("max_height"), "redo": False, "audio": None, "site_subtitles": []}
+
+
+def starting(cfg: dict) -> dict:
+    """What a new project starts with: the choices of the Settings (New projects, `[projects]`), only those that differ
+    from a project nothing was chosen for. Written in the project when the page makes it; the project changes them
+    after, and a change of the Settings does not reach the projects already made."""
+    p = cfg.get("projects") or {}
+    chosen = {"order": "videos" if p.get("order") == "videos" else None, "pause": True if p.get("pause") is True else None,
+              "review": review.mode(p.get("review")) or None, "review_engine": str(p.get("review_engine") or "") or None,
+              "review_auto": True if p.get("review_auto") is True else None, "replace": True if p.get("replace") is True else None,
+              "mkv": False if p.get("mkv") is False else None}
+    return {k: v for k, v in chosen.items() if v is not None}
 
 
 ITEM_KEYS = {"language", "languages", "max_height", "audio", "site_subtitles", "dub_language",   # what a video may choose for itself
              "transcription", "translator", "mkv", "replace", "review"}      # review: "none", "names" or "full" for this video
-PROJECT_KEYS = ITEM_KEYS | {"transcription", "translator", "pause", "review", "review_engine", "spend_agreed", "replace", "destination", "mkv", "order"}
+PROJECT_KEYS = ITEM_KEYS | {"transcription", "translator", "pause", "review", "review_engine", "review_auto", "spend_agreed", "replace",
+                            "destination", "mkv", "order"}
 ORDERS = ("steps", "videos")
 
 

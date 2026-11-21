@@ -90,7 +90,8 @@ def estimate_project(req, id):
 def review_project(req, id):
     """?path=: what the AI review proposes and waits a decision for: the names of the project (`proposals`) and,
     video by video, the lines of the full review (`corrections`: [{item, title, corrections: [{id, line, start,
-    original, corrected, reason, confidence}]}])."""
+    original, corrected, reason, confidence}]}]). `applied`: what was applied without a question in a project that
+    asked for it (`review_auto`): {names: [{transcribed, spelling, french, reason}], corrections: as above}."""
     r = service.manager.projects.proposals(id, req.arg("path"))
     if r is None:
         raise RequestError(404, i18n.t("err.project_unknown"))
@@ -99,10 +100,11 @@ def review_project(req, id):
 
 @route("POST", "/api/projects/{id}/validate")
 def validate_project(req, id):
-    """{decisions?: [{transcribed, spelling, french, accept}], lines?: [{item, id, accept, corrected?}]}: the names,
-    and the lines of the full review (`corrected`: the text retouched)."""
+    """{decisions?: [{transcribed, spelling, french, accept}], lines?: [{item, id, accept, corrected?}], undo?: {names?:
+    [transcribed], lines?: [{item, id}]}}: the names, and the lines of the full review (`corrected`: the text
+    retouched); `undo`: fixes applied without a question (`review_auto`) taken back."""
     d = req.json()
-    r = service.manager.projects.validate_names(id, d.get("decisions") or [], d.get("lines") or [])
+    r = service.manager.projects.validate_names(id, d.get("decisions") or [], d.get("lines") or [], d.get("undo"))
     if r is None:
         raise RequestError(404, i18n.t("err.project_unknown"))
     return 200, {**r, "project": service.manager.projects.get(id).summary()}
@@ -209,7 +211,7 @@ def create_project(req):
             raise RequestError(400, i18n.t("err.not_a_folder", path=base))
     named = where.get("named")
     root = sources.project_folder(items, title, cfg, base=base or None, named=None if named is None else bool(named))
-    run = service.manager.projects.create(root.as_posix(), items, {}, title, stages, start=False)
+    run = service.manager.projects.create(root.as_posix(), items, project_settings.starting(cfg), title, stages, start=False)
     if chosen:
         service.manager.projects.set_project_settings(run.id, chosen)
     if d.get("start"):

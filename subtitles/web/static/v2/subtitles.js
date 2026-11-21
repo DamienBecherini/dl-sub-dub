@@ -93,7 +93,8 @@ export function ProjectLanguages({ p }) {
 }
 
 /* The AI review of the project, among its quick settings: none, the names, every subtitle. Under it, who reviews and
-   whether it costs (a paid model always asks first); "change the model" unfolds its choice in place. */
+   whether it costs (a paid model always asks first); "change the model" unfolds its choice in place. Last, whether its
+   sure fixes are applied without a question (for who cannot judge them: a language one does not read). */
 export function ReviewQuick({ p, cfg }) {
   const s = p.subtitles;
   const [open, setOpen] = useState(false);
@@ -121,7 +122,10 @@ export function ReviewQuick({ p, cfg }) {
             <option value="">${s.reviewer && !s.review_engine ? T("v2.sub.review_auto", { name: engineName(model) }) : T("v2.sub.review_auto_plain")}</option>
             ${reviewers.map((m) => html`<option value=${m.id}>${engineName(m)}</option>`)}
           </select>
-        </label>`}`}`;
+        </label>`}
+      <label class="check review-auto">
+        <input type="checkbox" checked=${s.review_auto} onChange=${(e) => set({ review_auto: e.target.checked })} />
+        <span>${T("v2.review.auto")}</span> <${Tip} text=${T("v2.review.auto_title")} /></label>`}`;
 }
 
 export function SubtitleSettings({ p, cfg }) {
@@ -353,6 +357,64 @@ const clock = (s) => {
   const t = Math.floor(s || 0), h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60);
   return (h ? h + ":" + String(m).padStart(2, "0") : String(m)) + ":" + String(t % 60).padStart(2, "0");
 };
+
+/* What the AI review applied without a question, in a project that asked for it (its sure fixes, see ReviewQuick):
+   listed here, folded, the names of the project then the lines of each video, and each one can be taken back. */
+export function AppliedPanel({ p }) {
+  const [applied, setApplied] = useState(null);
+  useEffect(() => { setApplied(null); }, [p.id]);
+  useEffect(() => {
+    let gone = false;
+    api("GET", `/api/projects/${p.id}/review`).then((r) => { if (!gone) setApplied(r.applied || null); }).catch(() => {});
+    return () => { gone = true; };
+  }, [p.id, p.review_stamp]);                // review_stamp: raised by the service when it applies or takes back one
+  const names = applied?.names || [], videos = applied?.corrections || [];
+  const n = names.length + videos.reduce((t, v) => t + v.corrections.length, 0);
+  if (!n) return null;
+  const undo = async (what) => {
+    const r = await busy("", () => api("POST", `/api/projects/${p.id}/validate`, { undo: what }));
+    if (r) update({ project: r.project });
+  };
+  const button = (text, what) => html`
+    <td class="undo"><button type="button" class="secondary small" aria-label=${T("v2.applied.undo_label", { text })}
+                             onClick=${() => undo(what)}>${T("v2.applied.undo")}</button></td>`;
+  return html`
+    <details class="applied-panel">
+      <summary>${T("v2.applied.title", { n })}</summary>
+      <p class="help">${T("v2.applied.help")}</p>
+      ${names.length > 0 && html`
+        <h4>${T("v2.applied.names")}</h4>
+        <table class="names lines">
+          <tbody>
+            ${names.map((e) => html`
+              <tr key=${e.transcribed}>
+                <td>
+                  <div class="line-before">${e.transcribed}</div>
+                  <div>${e.spelling}${e.french && e.french !== e.spelling ? ` (${e.french})` : ""}</div>
+                  ${e.reason && html`<div class="help">${e.reason}</div>`}
+                </td>
+                ${button(e.spelling, { names: [e.transcribed] })}
+              </tr>`)}
+          </tbody>
+        </table>`}
+      ${videos.map((v) => html`
+        <h4 key=${v.item}>${v.title}</h4>
+        <table class="names lines">
+          <tbody>
+            ${v.corrections.map((c) => html`
+              <tr key=${c.id}>
+                <td class="help time">${clock(c.start)}</td>
+                <td>
+                  <div class="line-before">${c.original}</div>
+                  <div>${c.corrected}</div>
+                  ${c.reason && html`<div class="help">${c.reason}</div>`}
+                </td>
+                ${button(c.corrected, { lines: [{ item: v.item, id: c.id }] })}
+              </tr>`)}
+          </tbody>
+        </table>`)}
+    </details>`;
+}
 
 /* What the AI review proposes, decided here: the names (accepted with their spelling, and a French form if any, for
    the whole project) and, video by video, the lines of the full review (the fix, which can be retouched, replaces the

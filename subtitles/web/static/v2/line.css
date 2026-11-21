@@ -91,6 +91,13 @@
   summary { cursor: pointer; font-weight: 600; font-size: 14px; }
   .lines-all { margin: 6px 0 0; display: flex; gap: 14px; font-size: 13px; }
 }
+/* What the AI review applied without a question: folded, nothing waits there. */
+.applied-panel { padding: 8px 14px; border: 1px solid var(--border); border-radius: 10px;
+  summary { cursor: pointer; font-weight: 600; font-size: 14px; }
+  h4 { margin: 10px 0 2px; font-size: 14px; }
+  p { margin: 6px 0 0; }
+  td.undo { width: 1%; white-space: nowrap; vertical-align: middle; }
+}
 .translation-panel .no-more { font-size: 14px; }
 /* A video whose language is doubtful: said first in the panel, with what can be done about it. */
 .translation-panel .doubts { display: grid; gap: 8px; padding: 10px 12px; border-left: 4px solid var(--attention); border-radius: 6px; background: var(--drop);

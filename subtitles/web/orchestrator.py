@@ -262,7 +262,8 @@ class Orchestrator(Scheduler):
                 names = set(json.loads(f.read_text(encoding="utf-8")).get("names", []))
             except (OSError, ValueError):
                 names = set()
-        return {"proposals": review.proposals(run.file, names), "path": path or "", "corrections": self._pending_corrections(run, path)}
+        return {"proposals": review.proposals(run.file, names), "path": path or "", "corrections": self._pending_corrections(run, path),
+                "applied": self._applied_alone(run, path)}
 
     @staticmethod
     def _work(run: ProjectRun, item: Item) -> Path:
@@ -271,16 +272,25 @@ class Orchestrator(Scheduler):
     def _pending_corrections(self, run: ProjectRun, path: str | None = None) -> list[dict]:
         """The lines the full AI review proposes to fix, video by video (those of one video with `path`), in the order
         of the list: [{item, title, corrections: [{id, line, start, original, corrected, reason, confidence}]}]."""
+        return self._corrections(run, path, corrections.pending)
+
+    def _corrections(self, run: ProjectRun, path: str | None, of) -> list[dict]:
         out = []
         wanted = path.replace("\\", "/") if path else None
         for item in run.project.items:
             if not item.video or (wanted and wanted not in (item.video, item.id)):
                 continue
-            waiting = corrections.pending(self._work(run, item))
-            if waiting:
+            mine = of(self._work(run, item))
+            if mine:
                 out.append({"item": item.id, "title": item.title or Path(item.video).name,
-                            "corrections": [{k: c.get(k) for k in ("id", "line", "start", "original", "corrected", "reason", "confidence")} for c in waiting]})
+                            "corrections": [{k: c.get(k) for k in ("id", "line", "start", "original", "corrected", "reason", "confidence")} for c in mine]})
         return out
+
+    def _applied_alone(self, run: ProjectRun, path: str | None = None) -> dict:
+        """What was applied without a question in a project that asked for it (`review_auto`), to be shown and taken
+        back: {names: [{transcribed, spelling, french, reason}], corrections: as _pending_corrections}."""
+        return {"names": [{k: e.get(k) or "" for k in ("transcribed", "spelling", "french", "reason")} for e in review.applied_alone(run.file)],
+                "corrections": self._corrections(run, path, corrections.applied_alone)}
 
     def subtitles_of(self, ident: str, item_id: str, wanted: str = "") -> dict | None:
         """The subtitles of a video as they are now, numbered like the AI review numbers them: {transcribed, item, title,
@@ -335,26 +345,54 @@ class Orchestrator(Scheduler):
         return {"transcribed": True, "busy": False, "proposed": len(kept), "refused": refused, "waiting": len(corrections.pending(work)),
                 "state": item.state(Stage.SUBTITLES).value}
 
-    def validate_names(self, ident: str, decisions: list[dict], lines: list[dict] | None = None) -> dict | None:
+    def validate_names(self, ident: str, decisions: list[dict], lines: list[dict] | None = None, undo: dict | None = None) -> dict | None:
         """The decisions on the proposals of the AI review: `decisions` for the names ({transcribed, spelling, french,
-        accept}, see review.validate), `lines` for the lines of the full review ({item, id, accept, corrected?})."""
+        accept}, see review.validate), `lines` for the lines of the full review ({item, id, accept, corrected?}).
+        `undo` {names?: [transcribed], lines?: [{item, id}]}: fixes applied without a question (`review_auto`) taken
+        back; the subtitles of their videos are cut without them the next time they are made."""
         run = self.all.get(ident)
         if not run:
             return None
         accepted, rejected = review.validate(run.file, decisions)
         fixed, left = 0, 0
-        by_item: dict[str, list[dict]] = {}
-        for x in lines or []:
-            by_item.setdefault(str(x.get("item") or ""), []).append(x)
-        for item_id, chosen in by_item.items():
-            item = run.project.item(item_id)
-            if item is not None and item.video:
-                yes, no = corrections.decide(self._work(run, item), chosen)
-                fixed, left = fixed + yes, left + no
+
+        def by_item(entries) -> dict[str, list[dict]]:
+            found: dict[str, list[dict]] = {}
+            for x in entries or []:
+                if isinstance(x, dict):
+                    found.setdefault(str(x.get("item") or ""), []).append(x)
+            return {k: v for k, v in found.items() if (item := run.project.item(k)) is not None and item.video}
+        for item_id, chosen in by_item(lines).items():
+            yes, no = corrections.decide(self._work(run, run.project.item(item_id)), chosen)
+            fixed, left = fixed + yes, left + no
+        undo = undo if isinstance(undo, dict) else {}
+        back = review.take_back(run.file, [str(n) for n in undo.get("names") or []])
+        for item_id, chosen in by_item(undo.get("lines")).items():
+            back += corrections.take_back(self._work(run, run.project.item(item_id)), [str(x.get("id")) for x in chosen])
         with run.lock:
             observed.observe(run)
+            if back:
+                run.review_stamp += 1
+            self._decided(run)
             run.save()
-        return {"accepted": accepted, "rejected": rejected, "lines_accepted": fixed, "lines_rejected": left}
+        self.queue.wake.set()
+        return {"accepted": accepted, "rejected": rejected, "lines_accepted": fixed, "lines_rejected": left, "taken_back": back}
+
+    def _decided(self, run: ProjectRun):
+        """The videos that waited for the proposals of their review, now all decided, go on without another click: a
+        cost or the pause asked before a free translation stops them again (their costs were never accepted), what is
+        free does not. Not in a project the user paused: it goes on when they resume it."""
+        if run.state == RunState.SUSPENDED and run.project.launched:
+            return
+        for item in rules.waiting(run.project):
+            t = self.queue.get(item.stages[Stage.SUBTITLES].task or "")
+            if t is None or t.state != TaskState.PAUSED or t.waits != "validation" or not item.facts.get("validated"):
+                continue
+            if self.queue.resume(t.id, own(run.options, item, "translator"), self._languages(run, item), self._review_choice(run, item),
+                                 agreed=False):
+                run.held.discard(item.id)
+                item.apply(Stage.SUBTITLES, E.START, task=t.id)
+        run.settle()
 
     def estimate(self, ident: str, languages: list[str] | None = None) -> dict | None:
         """Sum of the estimates of the prepared videos (transcribed, task paused before the translation), with what
@@ -455,6 +493,7 @@ class Orchestrator(Scheduler):
             if run.state == RunState.DONE:
                 run.phase, run.finished = 1, None
             run.state = RunState.RUNNING
+            run.project.launched = True        # paused or stopped from now on, it is resumed (rules.project_view)
             run.save()
         self.queue.wake.set()
         self.fetching.poke.set()
@@ -564,7 +603,9 @@ class Orchestrator(Scheduler):
         (they stop once more if the review proposes something to decide). `review_choice` {review?, review_engine?}:
         another kind of review ("" for none) or another model for it, for the project from now on. In a project that
         does not run (paused, finished: a video run on its own, from its line, waits), the videos that wait go on, on
-        their own too: the project stays as it is."""
+        their own too: the project stays as it is, and the translator chosen becomes theirs (a choice of their own),
+        not the project's. The project's go-ahead gives its translator to the project, the videos that have their own
+        keep it."""
         run = self.all.get(ident)
         at_rest = bool(run) and run.state in (RunState.SUSPENDED, RunState.DONE) and rules.asks(run.context(), run.project)
         if not run or not (run.state == RunState.AWAITING_TRANSLATION or at_rest):
@@ -576,6 +617,12 @@ class Orchestrator(Scheduler):
             else:
                 run.options[k] = v
         run.held.clear()
+        if at_rest and translator is not None:   # the go-ahead of the videos that wait (run on their own): the model is theirs,
+            of_project = run.subtitle_settings()["translator"]       # the project keeps its own for the next ones
+            for item in rules.waiting(run.project):
+                if (item.overrides.get("translator") or of_project) != translator:
+                    settings.override(item, "translator", translator)
+            translator = None
         if at_rest or not run.by_video:
             if translator is not None:
                 run.options["translator"] = translator

@@ -188,9 +188,37 @@ def proposals(project_file: str | Path, names: set[str] | None = None) -> list[d
     return sorted((p for p in items if names is None or p["transcribed"] in names), key=lambda p: (-p.get("occurrences", 0), p["transcribed"].lower()))
 
 
-def validate(project_file: str | Path, decisions: list[dict]) -> tuple[int, int]:
+def accept_sure(project_file: str | Path, names: list[str]) -> list[str]:
+    """The project asked for the sure fixes to be applied without a question (`review_auto`): among these names waiting
+    for a decision, accepts those the model recognised and says sure ("high"; never an "uncertain" one, which has no
+    spelling), marked `auto` in the glossary. The others stay waiting. Returns the names accepted."""
+    wanted = set(names)
+    with _lock:
+        sure = [p for p in _read(path_for(project_file))["proposals"] if p["transcribed"] in wanted and p.get("confidence") == "high"
+                and p.get("status") in ("to_fix", "french_form") and p.get("spelling")
+                and (p["spelling"] != p["transcribed"] or p.get("french"))]
+        if sure:
+            validate(project_file, [{"transcribed": p["transcribed"], "spelling": p["spelling"], "french": p.get("french") or "", "accept": True}
+                                    for p in sure], auto=True)
+    return [p["transcribed"] for p in sure]
+
+
+def applied_alone(project_file: str | Path) -> list[dict]:
+    """The names accepted without a question (see accept_sure), as the glossary keeps them."""
+    return [e for e in glossary.load(glossary.path_for(project_file)) if e.get("auto")]
+
+
+def take_back(project_file: str | Path, names: list[str]) -> int:
+    """Takes back names accepted without a question: out of the glossary (they are not submitted again). Returns how many."""
+    with _lock:
+        mine = {e["transcribed"] for e in applied_alone(project_file)} & set(names)
+        return glossary.remove(glossary.path_for(project_file), sorted(mine)) if mine else 0
+
+
+def validate(project_file: str | Path, decisions: list[dict], auto: bool = False) -> tuple[int, int]:
     """Applies the decisions {transcribed, spelling, french, accept}. Returns (accepted, rejected).
-    A name accepted without a different spelling and without a French form brings nothing: it is rejected."""
+    A name accepted without a different spelling and without a French form brings nothing: it is rejected.
+    `auto`: decided without a question (accept_sure), kept as such in the glossary."""
     with _lock:
         f = path_for(project_file)
         d = _read(f)
@@ -202,7 +230,8 @@ def validate(project_file: str | Path, decisions: list[dict]) -> tuple[int, int]
                 continue
             spelling, french = str(x.get("spelling") or "").strip(), str(x.get("french") or "").strip()
             if x.get("accept") and spelling and (spelling != p["transcribed"] or french):
-                new.append({"transcribed": p["transcribed"], "spelling": spelling, "french": french, "status": p.get("status", "to_fix")})
+                new.append({"transcribed": p["transcribed"], "spelling": spelling, "french": french, "status": p.get("status", "to_fix"),
+                            **({"auto": True, "reason": p.get("reason") or ""} if auto else {})})
                 accepted += 1
             else:
                 rejected += 1

@@ -308,8 +308,16 @@
   "other": "Relecture IA complète : {n} lignes à vérifier"
  },
  "log.corrections_applied": {
-  "one": "Relecture IA : {n} ligne corrigée (validée par vous)",
-  "other": "Relecture IA : {n} lignes corrigées (validées par vous)"
+  "one": "Relecture IA : {n} ligne corrigée (correction acceptée)",
+  "other": "Relecture IA : {n} lignes corrigées (corrections acceptées)"
+ },
+ "log.review_auto": {
+  "one": "Relecture IA : {n} correction sûre appliquée sans vous demander, comme le projet le demande (noms : {names}, lignes : {lines}).",
+  "other": "Relecture IA : {n} corrections sûres appliquées sans vous demander, comme le projet le demande (noms : {names}, lignes : {lines})."
+ },
+ "log.review_auto_left": {
+  "one": "{n} proposition moins sûre n'est pas appliquée : elle reste à décider sur la page, sans arrêter la vidéo.",
+  "other": "{n} propositions moins sûres ne sont pas appliquées : elles restent à décider sur la page, sans arrêter la vidéo."
  },
  "log.review_skipped": "Relecture IA sautée : aucun modèle pour relire (aucun traducteur configuré, ou celui choisi n'existe plus).",
  "log.review_to_check": {
@@ -629,6 +637,16 @@
  "v2.review.subscription": "sur votre abonnement Claude Code, rien de facturé",
  "v2.review.change": "changer de modèle",
  "v2.review.fold": "réduire",
+ "v2.review.auto": "Appliquer sans me demander les corrections sûres",
+ "v2.review.auto_title": "Pour une vidéo dans une langue que vous ne lisez pas, ou un long projet. Les corrections que le modèle dit sûres (noms et lignes) sont appliquées sans arrêter le projet ; jamais une ligne supprimée. Les autres propositions ne sont pas appliquées : elles restent à décider au-dessus des vidéos, et le projet ne les attend pas. Ce qui a été appliqué y est listé aussi, et chaque correction s'annule. Attention : c'est le modèle qui se dit sûr, et un petit modèle se trompe aussi avec assurance.",
+ "v2.applied.title": {
+  "one": "{n} correction appliquée sans vous demander",
+  "other": "{n} corrections appliquées sans vous demander"
+ },
+ "v2.applied.help": "Corrections que le modèle a dites sûres, appliquées parce que ce projet le demande (Relecture IA). « Annuler » retire une correction : le texte d'origine revient la prochaine fois que les sous-titres de la vidéo sont faits (son menu, « Sous-titrer à nouveau » : seules les lignes changées sont retraduites).",
+ "v2.applied.names": "Noms, pour tout le projet",
+ "v2.applied.undo": "Annuler",
+ "v2.applied.undo_label": "Annuler cette correction : {text}",
  "v2.tip.video_review": "La relecture de cette vidéo seule : par exemple Complète pour un épisode difficile, ou Aucune. Le modèle est celui du projet.",
  "v2.sub.review_mode.none": "Aucune",
  "v2.sub.review_mode.names": "Les noms propres",
@@ -676,9 +694,9 @@
  "v2.sub.estimating": "Estimation…",
  "v2.sub.translate": "Traduire",
  "v2.sub.review_go": "Relire, puis traduire",
- "v2.sub.no_more": "Ne plus me demander avant de dépenser dans ce projet",
- "v2.sub.spend_agreed": "Ne plus demander avant de dépenser dans ce projet (décochez pour être de nouveau consulté)",
- "v2.sub.spend_agreed_title": "Sans cette case, un modèle payant (relecture, traduction) ne tourne jamais sans votre accord, avec son coût estimé, pour chaque vidéo ou groupe de vidéos. Cochée, les coûts des vidéos suivantes s'additionnent sans nouvelle question ; ce que la relecture propose attend toujours votre décision.",
+ "v2.sub.no_more": "Ne plus me demander avant de dépenser dans ce projet, jusqu'à l'arrêt du service",
+ "v2.sub.spend_agreed": "Ne plus demander avant de dépenser dans ce projet, jusqu'à l'arrêt du service (décochez pour être de nouveau consulté)",
+ "v2.sub.spend_agreed_title": "Sans cette case, un modèle payant (relecture, traduction) ne tourne jamais sans votre accord, avec son coût estimé, pour chaque vidéo ou groupe de vidéos. Cochée, les coûts des vidéos suivantes de ce projet s'additionnent sans nouvelle question, jusqu'à l'arrêt du service (redémarrage, ou arrêt seul après un moment sans activité) : rouvert ensuite, le projet demande de nouveau. Ce que la relecture propose attend toujours votre décision.",
  "v2.sub.names_title": {
   "one": "{n} nom à vérifier",
   "other": "{n} noms à vérifier"

@@ -52,6 +52,7 @@
 }
 .ps-review { max-width: 340px;
   .review-by { margin: 0; line-height: 1.45; }
+  .review-auto { font-size: 13px; align-items: flex-start; }
   .paid { color: var(--text); font-weight: 600; }
   .review-model { display: grid; gap: 4px; font-size: 13px; color: var(--muted);
     > span { display: inline-flex; align-items: center; gap: 4px; }

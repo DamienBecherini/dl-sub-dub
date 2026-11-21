@@ -31,13 +31,59 @@ def test_the_names_of_the_ai_review_are_decided_on_the_page_then_used(page, stud
     assert "Gary Iev" in names.inner_text() and studio.asked == [("review", "local")]   # reviewed, nothing translated yet
     assert states(run) == ["paused"] and not studio.srt(video, "fr")
     names.get_by_role("button", name="Valider et continuer").click()
-    panel = page.locator(".translation-panel")                         # decided: the go-ahead of the translation comes next
-    panel.get_by_role("button", name="Traduire", exact=True).click()
-    state_is(page, "done")
+    state_is(page, "done")                                             # decided, and the translator is free: it goes on, no second click
+    assert not page.locator(".translation-panel").count()
     assert "Gariaev" in studio.srt(video, "en") and "Gary Iev" not in studio.srt(video, "en")       # fixed in the spoken language
     assert "Gariaev" in studio.srt(video, "fr") and ("translation", "local") in studio.asked
     glossary = json.loads((studio.folder / "subtitles.glossary.json").read_text(encoding="utf-8"))
     assert "Gariaev" in json.dumps(glossary, ensure_ascii=False)       # kept for the other videos of the project
+
+
+def test_the_sure_fixes_are_applied_without_stopping_then_one_is_taken_back(page, studio):
+    video = studio.video()
+    run = studio.project(video, review="names", review_engine="local")
+    studio.review = [[FIX]]                                            # the model says "Gariaev" for "Gary Iev", and says it sure
+    opened(page, studio, run)
+    page.get_by_role("checkbox", name=re.compile("Appliquer sans me demander les corrections sûres")).click()
+    until(page, lambda: run.options.get("review_auto") is True, "the setting of the project")
+    page.locator(".run-main").click()
+    state_is(page, "done")                                             # to its end: it never stopped for the name
+    assert "Gariaev" in studio.srt(video, "en") and "Gariaev" in studio.srt(video, "fr") and not page.locator(".names-panel").count()
+    applied = page.locator(".applied-panel")                           # what was applied is listed, folded
+    applied.locator("summary").click()
+    said = applied.inner_text()
+    assert "1 correction appliquée sans vous demander" in said and "Gary Iev" in said and "Gariaev" in said and "son proche" in said
+    applied.get_by_role("button", name=re.compile("Annuler cette correction")).click()
+    applied.wait_for(state="detached")                                 # taken back: nothing applied any more
+    assert json.loads((studio.folder / "subtitles.glossary.json").read_text(encoding="utf-8")) == []
+    page.get_by_role("button", name="Toutes les actions pour cette vidéo").click()
+    page.get_by_role("menuitem", name=re.compile("^Sous-titrer à nouveau")).or_(page.get_by_text(re.compile("^Sous-titrer à nouveau"))).first.click()
+    until(page, lambda: "Gary Iev" in studio.srt(video, "fr"), "the subtitles made again without the fix", seconds=20)
+    assert "Gariaev" not in studio.srt(video, "en") and "Gariaev" not in studio.srt(video, "fr")
+    assert studio.asked.count(("review", "local")) == 1                # the name is not submitted again
+
+
+def test_what_is_less_sure_stays_to_decide_under_the_go_ahead(page, studio):
+    video = studio.video()
+    run = studio.project(video, translator="claude", review="full", review_engine="local", review_auto=True)
+    line = lambda n, text, confidence: {"line": n, "corrected": text, "reason": "d'après le contexte", "confidence": confidence}  # noqa: E731
+    studio.lines = [[line(5, "A disk can fail and a flat can burn down.", "high"), line(6, "With three copies you do not lose your photos.", "medium"),
+                     line(8, "", "high")]]                             # sure, less sure, a line removed
+    opened(page, studio, run).locator(".run-main").click()
+    panel = page.locator(".translation-panel")                         # the cost of the translation is asked at once:
+    panel.wait_for()                                                   # the proposals left do not come first
+    names = page.locator(".names-panel")
+    names.wait_for()
+    assert "2 lignes à vérifier" in names.inner_text() and not names.get_by_role("button", name="Plus tard").count()
+    assert page.locator(".applied-panel summary").inner_text() == "1 correction appliquée sans vous demander"
+    assert not studio.srt(video, "fr") and ("translation", "claude") not in studio.asked       # nothing spent yet
+    panel.get_by_role("button", name="Traduire", exact=True).click()
+    state_is(page, "done")
+    english, french = (" ".join(studio.srt(video, code).split()) for code in ("en", "fr"))     # a subtitle is on one or two lines
+    assert "a flat can burn down." in english                          # the sure one, applied
+    assert "lose your pictures." in english and "see you soon." in english       # the less sure one and the line removed: as transcribed
+    assert "TR A disk can fail and a flat can burn down." in french
+    assert names.is_visible()                                          # still to decide, the project done
 
 
 def test_one_go_ahead_for_all_the_videos_before_a_paid_model(page, studio):
@@ -87,6 +133,30 @@ def test_an_address_is_downloaded_then_subtitled(page, studio):
     assert studio.downloaded == [ADDRESS] and states(run, Stage.DOWNLOAD) == ["done"] and states(run) == ["done"]
     video = next(iter(studio.root.rglob("A talk online.mp4")))
     assert "TR Hello" in studio.srt(video, "fr")                       # its subtitles next to the file downloaded
+
+
+def test_a_video_run_from_its_line_then_the_project_go_on_by_themselves_once_the_names_are_decided(page, studio):
+    """The case of the author, 21/11/2026: a video run from its line, then Run for the others; the review of the names
+    stops the first one. Before: Run said "Resume", and once the names were decided a second go-ahead asked for a
+    model, so that the two videos could end translated by two models."""
+    one = studio.video("Episode 1.mp4")
+    two = studio.video("Episode 2.mp4", said="Hello and welcome. Today we talk about the rule of three copies. Thank you for watching.")
+    run = studio.project(one, two, review="names", review_engine="local")
+    studio.review = [[FIX]]                                            # names in the first video only
+    opened(page, studio, run)
+    page.get_by_role("button", name="Sous-titrer", exact=True).first.click()      # the first video, from its line
+    until(page, lambda: run.project.items[0].state(Stage.SUBTITLES) in (S.RUNNING, S.PAUSED), "the first video at work")
+    run_button = page.locator(".run-main")
+    run_button.filter(has_text="Lancer").wait_for()                    # never run: "Run", not "Resume"
+    assert "Reprendre" not in run_button.inner_text()
+    run_button.click()
+    names = page.locator(".names-panel")
+    names.wait_for()
+    names.get_by_role("button", name="Valider et continuer").click()
+    state_is(page, "done")                                             # no second go-ahead: the translator is free
+    assert states(run) == ["done", "done"] and not page.locator(".translation-panel").count()
+    assert [a for a in studio.asked if a[0] == "translation"] == [("translation", "local")] * 2      # one model for both
+    assert "Gariaev" in studio.srt(one, "fr")
 
 
 def test_one_video_is_taken_through_its_steps_from_its_menu(page, studio):

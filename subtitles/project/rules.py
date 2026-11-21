@@ -39,6 +39,7 @@ class Context:
     dubbing: bool = False                          # the dubbing is set up (Settings)
     state: str = "suspended"                       # of the run: running, suspended, awaiting_translation, done, cancelled
     started: bool = False                          # some work was done or is under way (ProjectRun.started)
+    launched: bool = False                         # Run was pressed on the project (a video run from its line does not count)
     sharing: str = ""                              # how the graphics card is shared (gpu.sharing)
     language: str = ""                             # the spoken language chosen for the project ("" = detected)
     finishing: frozenset = frozenset()             # ids of the videos that end after "pause after the running videos"
@@ -250,18 +251,22 @@ def blocked(project: Project, active: list[Stage] | None = None) -> list[Item]:
 
 
 def status(ctx: Context, project: Project) -> str:
-    """The state of a project in words: created and not run yet, it is "ready", not "suspended"; with nothing left,
-    "done". What a video run on its own does is said too: a project that does not run (finished, paused, never run)
-    where one is at work is "running" meanwhile, and one where a video waits for the go-ahead is
-    "awaiting_translation". A project paused while its videos end stays "suspended" (see `alone`)."""
-    if alone(ctx, project):
-        return "running"
+    """The state of a project in words: never run (Run not pressed: a video run from its line does not count), it is
+    "ready", not "suspended"; with nothing left, "done". What waits for the user comes first: a project where a
+    video waits for the go-ahead is "awaiting_translation", even while another one runs on its own. Then what a video
+    run on its own does: a project that does not run (finished, paused, never run) where one is at work is "running"
+    meanwhile. A project paused while its videos end stays "suspended" (see `alone`)."""
     if asks(ctx, project):
         return "awaiting_translation"
+    if alone(ctx, project):
+        return "running"
+    if ctx.state == "done":                 # ended; a video ticked again or added since: ready (a cancelled one or an error ended too)
+        new = any(i.ticked(s) and i.state(s) in (S.TODO, *BUSY) for i in project.selected() for s in project.stages)
+        return "ready" if new else "done"
     if not ctx.suspended:
         return ctx.state
     nothing_left = all(not open_step(i, s) for i in project.selected() for s in project.stages)
-    return "done" if nothing_left else "suspended" if ctx.started else "ready"
+    return "done" if nothing_left else "suspended" if ctx.launched else "ready"
 
 
 def step_counts(ctx: Context, project: Project, stage: Stage) -> dict:
@@ -295,7 +300,7 @@ def item_view(ctx: Context, project: Project, item: Item) -> dict:
 def project_view(ctx: Context, project: Project) -> dict:
     """What these rules say of the project as a whole (the `rules` of its summary). `run.open`: the steps Run has
     something to take for, named on its button; none (and nothing to resume): the button waits, even while a video
-    run on its own is at work. `go_ahead`: the go-ahead is asked now (see `asks`)."""
+    run on its own is at work. `run.resume`: "Resume", only on a project run then paused or stopped. `go_ahead`: the go-ahead is asked now (see `asks`)."""
     steps_run = run_steps(project)
     rows = project.selected()
     open_steps = [s for s in steps_run if any(to_take(i, s) for i in rows)]
@@ -303,5 +308,5 @@ def project_view(ctx: Context, project: Project) -> dict:
             "working": ctx.running or at_work(project), "go_ahead": asks(ctx, project),
             "finished": sum(1 for i in rows if all(not i.stages[s].selected or i.state(s) in FINISHED for s in project.stages)),
             "run": {"steps": steps_run, "open": open_steps,
-                    "resume": ctx.suspended and ctx.started and any(ready(ctx, i, s) for s in (open_steps or steps_run) for i in project.items)},
+                    "resume": ctx.suspended and ctx.launched and any(ready(ctx, i, s) for s in (open_steps or steps_run) for i in project.items)},
             "steps": {s: step_counts(ctx, project, s) for s in STAGES}}

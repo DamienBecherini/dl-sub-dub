@@ -283,7 +283,7 @@ def test_reloaded_project_keeps_the_names_to_validate(monkeypatch, tmp_path):
     observed.observe(run)
     assert run.videos[0]["reviewed"] and not run.videos[0]["validated"]
     assert [p["transcribed"] for p in g.projects.proposals("L", "v0.mp4")["proposals"]] == ["Gary Iev"]
-    assert g.projects.validate_names("L", [{"transcribed": "Gary Iev", "spelling": "Gariaev", "french": "", "accept": True}]) == {"accepted": 1, "rejected": 0, "lines_accepted": 0, "lines_rejected": 0}
+    assert g.projects.validate_names("L", [{"transcribed": "Gary Iev", "spelling": "Gariaev", "french": "", "accept": True}]) == {"accepted": 1, "rejected": 0, "lines_accepted": 0, "lines_rejected": 0, "taken_back": 0}
     assert run.videos[0]["validated"]
 
 

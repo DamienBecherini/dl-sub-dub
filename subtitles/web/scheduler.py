@@ -111,11 +111,12 @@ class Scheduler:
     @staticmethod
     def _review_choice(run: ProjectRun, item: Item | None = None) -> dict:
         """The AI review of a video for its task: which one ("", "names", "full": its own choice, "none" included,
-        otherwise the project's), the model chosen for it ("": see review.engine), and whether the user said not to be
-        asked before a paid model any more in this project."""
+        otherwise the project's), the model chosen for it ("": see review.engine), whether its sure fixes are applied
+        without a question, and whether the user said not to be asked before a paid model any more in this project."""
         o = run.options
         return {"review": review.mode(own(o, item, "review") if item is not None else o.get("review")),
-                "review_engine": o.get("review_engine") or "", "spend_agreed": bool(o.get("spend_agreed"))}
+                "review_engine": o.get("review_engine") or "", "review_auto": bool(o.get("review_auto")),
+                "spend_agreed": bool(o.get("spend_agreed"))}
 
     @staticmethod
     def _languages(run: ProjectRun, item: Item) -> list[str] | None:
@@ -181,6 +182,7 @@ class Scheduler:
             if item.state(stage) == S.SKIPPED:
                 item.apply(stage, E.RESET)             # left out earlier (nothing was translated to dub): it applies now
             item.apply(stage, E.START, task=task.id)
+            run.settle()                           # it waited for the go-ahead: the project no longer does
             run.save()
         self.queue.wake.set()
         return True
@@ -325,8 +327,11 @@ class Scheduler:
                 item.apply(Stage.DUBBING, E.PUT_BACK)       # a Continue that did not reach the dubbing
             if t.prepared and t.state in (TaskState.PAUSED, TaskState.DONE):
                 item.facts["count"], item.facts["detected_language"] = len(t.prepared.cues), t.prepared.code
-            if run.state == RunState.AWAITING_TRANSLATION and not any(i.state(Stage.SUBTITLES) == S.PAUSED for i in run.items()):
-                run.end_phase()                # the last waiting video was translated or cancelled on its own
+            if t.fixed_alone:                  # sure fixes applied without a question: the page reads again what was applied
+                t.fixed_alone = False
+                run.review_stamp += 1
+            run.settle()                       # the last waiting video was translated or cancelled on its own: the work goes on
+                                               # (video by video, the next ones waited for it)
             if t.prepared:
                 item.facts["transcribed"] = True
                 if (t.result or {}).get("replaced"):      # the video changed file

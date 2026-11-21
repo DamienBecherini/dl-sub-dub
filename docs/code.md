@@ -92,7 +92,7 @@ the manager.
 | `transcription.py`, `local_transcription.py` | Client of the transcription server (words with timestamps); a local server started on demand. |
 | `segmentation.py`, `formats.py` | Words → readable subtitles; SRT and WebVTT. |
 | `review.py`, `glossary.py` | AI review of proper names, validated by the user, shared by the project; which review a project asks for (`review.mode`) and which model reviews (`review.engine`: any translator). |
-| `corrections.py` | Full AI review of a video: every subtitle read in order, the lines to fix proposed (`review`), decided (`decide`) and applied to the words of the transcription in memory before the segmentation (`apply`); `corrections.json` in the working folder. |
+| `corrections.py` | Full AI review of a video: every subtitle read in order, the lines to fix proposed (`review`), decided (`decide`) and applied to the words of the transcription in memory before the segmentation (`apply`); `corrections.json` in the working folder. The sure ones accepted without a question when the project asks for it (`accept_sure`, as `review.accept_sure` for the names), listed (`applied_alone`) and taken back (`take_back`). |
 | `translation.py`, `estimation.py` | Translation in numbered chunks (local model, Claude API, Claude Code of the machine on the user's subscription, OpenAI-compatible), and a JSON answer of a given shape from any of them (`complete(schema=…)`, `parse_json`); cost of a translation and of an AI review before spending. |
 | `dubbing.py`, `dubbing_worker.py`, `muxing.py` | Dubbing in a separate Python environment (a short sentence's voice reference completed only with lines of the same voice, `reference_lines`, recognized from speaker vectors of at least 0.5 s of voice, `speaker_bounds`); multi-track MKV, the cover attached. The voice separated from the background (demucs) is made once per video, in `dubbing/separation`, and shared by the dubbed languages; it goes once every voice asked is made (`dubbing.clear_temporary`). Each sentence is written as soon as it is made (`dubbing/sentences-<language>`): a stopped dubbing takes them again (see [Stopping, at once](#stopping-at-once)). |
 | `project/` | The project model and the state machine of its steps, its settings, its steps, the rules of what can be done now, its file, and what a choice of the user does (`choices.py`: steps ticked with what they need, how far the work goes, settings written as the work expects them; no disk, no service). |
@@ -359,7 +359,10 @@ language, kept in `Prepared.doubt`; the lists are files, `subtitles/function_wor
 or a translation of it would be lost, even free; `TaskQueue.language_opinion` asks a model which language it hears),
 before an AI review by a paid model (`review`:
 its estimate, `estimation.review`), when the review proposes names or lines to decide (`validation`, for the tasks
-asked to wait for them: `check_names`, set for every video of a project), before a paid translation
+asked to wait for them: `check_names`, set for every video of a project; not when the project asked for the sure
+fixes to be applied without a question, `review_auto`: `TaskQueue._fixes_alone` accepts the names and the lines the
+model says sure, marked `auto`, never a removed line, leaves the others to decide, and the subtitles are cut again
+in the same pass), before a paid translation
 (`translation`, unless the task was already resumed: the estimate of the translation is shown at every pause).
 `resume` starts its next pass, possibly with another translator, another model for the review, or none. A decision
 that changes the subtitles (a name, a line: `TaskQueue._seen`) makes the next pass cut them again. In a project, a
@@ -467,7 +470,9 @@ Two pages:
   categories, as a phone's settings (New projects, Translation, Transcription, Dubbing, Downloads, Subtitle layout,
   Folders and cleanup, Application): a list with each one's value in a line, one page each (side by side on a
   computer), the page in the hash of the address. New projects writes `[projects]` of the settings (order, Dubbing
-  ticked, pause, review, MKV, MKV in place of the video), the bottom layer of every project (`project/settings.py`).
+  ticked, pause, review, MKV, MKV in place of the video), what a project starts with: written in it when the page
+  makes it (`project/settings.py`, `starting`; the route `POST /api/projects`), so that the work does what the page
+  shows.
 
 ```mermaid
 flowchart LR
@@ -642,6 +647,25 @@ What writing them taught: the page forbids `eval` (its Content Security Policy),
 script given as text (`wait_for_function`, `evaluate`); a box of the page is ticked by the service (click it, then
 wait for the service: `page_site.until`), and a test that expects an error of the page (a project the service no
 longer knows: 404) names it in `page.tolerated`.
+
+**What must always hold, whatever the order of the clicks.** [`tests/test_invariants.py`](../tests/test_invariants.py)
+checks the invariants of the behaviour validated by the author (no paid model without a go-ahead, a video that waits
+can always be unblocked, "Resume" only after a pause, the state shown tells the truth, a video goes on by itself
+once what it waited for is settled and what follows is free, the file says what the service knows…) with
+[Hypothesis](https://hypothesis.readthedocs.io/) in stateful mode: it draws the settings of a project and a sequence of
+what a user does on the page (Run, a video run from its line, Pause, Stop, a go-ahead, the names decided, a box, a
+cancel, a restart of the service), only what the page offers, on the real service driven step by step, and checks
+every invariant after each action. A sequence that breaks one is shrunk to the shortest one that does, and kept in
+`.hypothesis/` to be tried again first. 150 sequences on each run of the suite; more to search further:
+`INVARIANTS_EXAMPLES=3000 pytest tests/test_invariants.py`. Written on 21/11/2026, it found on its first run, among
+others, the "Resume" shown after a video run on its own and the second go-ahead asked after the names were decided.
+
+**Tests that are tested.** Mutation testing ([mutmut](https://github.com/boxed/mutmut)) changes the code one detail at a
+time (an `and` turned into `or`, a test reversed, a value replaced) and runs the tests: a change no test notices
+shows a rule nobody checks. Run on `subtitles/project/rules.py` on 21/11/2026, under Linux (mutmut works badly on
+Windows), with the tests of the scheduling and of the rules: 552 of 575 changes caught at first, 572 after the tests
+it led to; the 3 left change nothing that can happen (an error message tested against "out of memory", a video
+without a file that is not an address). Too slow for each push: run it by hand after a change of the rules.
 
 ## Where to look first
 

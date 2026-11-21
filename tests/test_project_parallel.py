@@ -124,6 +124,7 @@ def test_a_project_paused_while_it_translates_says_paused(monkeypatch, tmp_path)
     g = manager(monkeypatch, tmp_path, "claude")
     run = project_in_phase_2(g, tmp_path, 8, "claude")
     run.phase, run.state = 1, "awaiting_translation"
+    run.project.launched = True                # Run was pressed: paused, it says so
     assert run.summary()["rules"]["go_ahead"]
     assert g.projects.translate("L", "claude", ["fr"]) and len(run.agreed) == 8
     g.projects.feed()

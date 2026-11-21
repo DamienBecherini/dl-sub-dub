@@ -10,6 +10,7 @@ tasks of previous sessions.
 
 The queue knows nothing of projects: it tells what happens to its tasks to a `QueueEvents` (the orchestrator).
 """
+import dataclasses
 import json
 import threading
 import time
@@ -62,6 +63,7 @@ class Task:
         self.opinion: dict | None = None       # the language a model found for a doubtful transcription: {code, engine, name}
         self.agreed = False                    # resumed once: the costs shown at its pause are accepted
         self.asked_validation = False          # paused once for the proposals of the review: not asked twice
+        self.fixed_alone = False               # sure fixes of the review were applied without a question (review_auto): told to the project
         self.cleared = False                   # past the pauses before the translation
         self.reviewed_now = False              # an AI review ran in this pass: its duration says nothing of the speed of the pass
         self.progress: dict | None = None      # {done, total, more, step}: lines translated or sentences dubbed so far
@@ -289,9 +291,11 @@ class TaskQueue:
             t.write(i18n.t("log.cancel_requested"))
         return True
 
-    def resume(self, ident: str, translator: str | None = None, languages: list[str] | None = None, review: dict | None = None) -> Task | None:
+    def resume(self, ident: str, translator: str | None = None, languages: list[str] | None = None, review: dict | None = None,
+               agreed: bool = True) -> Task | None:
         """A paused task goes on, possibly with another translator or other languages; `review` {review?, review_engine?}:
-        another kind of AI review ("" for none) or another model for it. The costs shown at its pause are accepted."""
+        another kind of AI review ("" for none) or another model for it. The costs shown at its pause are accepted,
+        unless `agreed` is False (it waited for the proposals of its review, now decided: a cost still stops it)."""
         t = self.tasks.get(ident)
         if not t or t.state != TaskState.PAUSED:
             return None
@@ -299,8 +303,9 @@ class TaskQueue:
             t.options["translator"] = translator
         if languages is not None:
             t.options["languages"] = language.normalize_codes(languages)
-        t.options.update({k: v for k, v in (review or {}).items() if k in ("review", "review_engine", "spend_agreed") and v is not None})
-        t.agreed = True
+        t.options.update({k: v for k, v in (review or {}).items()
+                          if k in ("review", "review_engine", "review_auto", "spend_agreed") and v is not None})
+        t.agreed = t.agreed or agreed
         t.state = TaskState.QUEUED
         t.log_resumed_at = len(t.log)
         t.write(i18n.t("log.resume_prefix") + " " + i18n.t("log.resumed", translator=t.options.get("translator") or i18n.t("log.active_translator"),
@@ -423,11 +428,12 @@ class TaskQueue:
             cancelled = t.cancellation
             t.waits, t.reviewed_now = "", False
             if t.prepared is None or self._seen(t) != t.glossary_seen:      # names or corrections validated since: segmentation to redo
-                t.prepared = pipeline.prepare(r, t.write, step, cancelled)
-                t.glossary_seen = self._seen(t)
+                self._prepare(t, r, step, cancelled)
             if not t.cleared:
                 if self._pauses_after_preparation(t, r, cfg, step):
                     return
+                if self._seen(t) != t.glossary_seen:      # sure fixes applied without a question: cut again with them
+                    self._prepare(t, r, step, cancelled)
                 t.cleared = True
             res = pipeline.translate_and_copy(r, t.prepared, t.write, step, cancelled)
             t.result = {"video": str(res.video), "srt": str(res.srt), "source_srt": str(res.source_srt), "language": res.language,
@@ -477,6 +483,13 @@ class TaskQueue:
         except (config.ConfigError, OSError):
             pass
 
+    def _prepare(self, t: Task, r: pipeline.Request, step, cancelled):
+        """The first phase of the task; again when names or corrections were decided since: the subtitles are cut again
+        from the transcription kept (never transcribed twice, even asked to make everything again)."""
+        again = t.prepared is not None
+        t.prepared = pipeline.prepare(dataclasses.replace(r, redo=False) if again else r, t.write, step, cancelled)
+        t.glossary_seen = self._seen(t)
+
     @staticmethod
     def _seen(t: Task) -> tuple[float, tuple]:
         """What the segmentation depends on besides the transcription: the glossary of the project and the corrections
@@ -498,7 +511,8 @@ class TaskQueue:
           asked any more (`spend_agreed`: for this project, from its go-ahead panel; a command line or a script says
           it in what it starts). `pause` true only adds a pause before a free translation;
         - after the review, when its proposals (names, lines) wait for a decision and the task was asked to wait for
-          them (`check_names`);
+          them (`check_names`); not when the project asked for the sure ones to be applied without a question
+          (`review_auto`, see _fixes_alone): the others then stay to decide and the video goes on;
         - before a translation that costs, unless the task was already resumed: the estimate of the translation is
           shown at every pause, and going on accepts it."""
         o = t.options
@@ -524,7 +538,9 @@ class TaskQueue:
             if not t.agreed and asks and estimation.pause_by_default(m_review):
                 return self._pause(t, "review", i18n.t("log.paused_review", name=config.engine_name(m_review)))
         pending_names, pending_lines = self._review(t, r, m_review, step, bool(names), full)
-        if o.get("check_names") and (pending_names or pending_lines) and not t.asked_validation:
+        if o.get("review_auto") and (pending_names or pending_lines):
+            self._fixes_alone(t, pending_names, pending_lines)         # the sure ones applied, the others left to decide: no pause
+        elif o.get("check_names") and (pending_names or pending_lines) and not t.asked_validation:
             t.asked_validation = True
             return self._pause(t, "validation", i18n.t("log.paused_lines", n=pending_lines, names=len(pending_names)) if pending_lines
                                else i18n.t("log.paused_names", n=len(pending_names)))
@@ -532,6 +548,22 @@ class TaskQueue:
         if pause and not t.agreed and t.estimate["languages"] and m_trans.get("type", "none") != "none":
             return self._pause(t, "translation", i18n.t("log.paused_translate"))
         return False
+
+    @staticmethod
+    def _fixes_alone(t: Task, names: list[str], lines: int):
+        """The project asked for the sure fixes to be applied without a question (`review_auto`, for who cannot judge
+        them: a language one does not read): the names and the lines the model says sure are accepted (never a removed
+        line), the others stay to decide, not applied, and the video does not wait for them. What was applied is kept
+        as such (`auto`), shown on the page and can be taken back there."""
+        work, file = t.prepared.work, t.options["project_file"]
+        sure_names = review.accept_sure(file, names)
+        sure_lines = corrections.accept_sure(work) if lines else 0
+        left = len(names) - len(sure_names) + lines - sure_lines
+        t.fixed_alone = t.fixed_alone or bool(sure_names or sure_lines)
+        if sure_names or sure_lines or not t.asked_validation:         # said once, then only when something more is applied
+            t.write(i18n.t("log.review_auto", n=len(sure_names) + sure_lines, names=len(sure_names), lines=sure_lines)
+                    + (" " + i18n.t("log.review_auto_left", n=left) if left else ""))
+        t.asked_validation = True
 
     def _review_to_do(self, t: Task, r: pipeline.Request, cfg: dict) -> tuple[str, dict | None, list[dict], bool]:
         """What the AI review still has to do for this video: (the review asked for, the model that reviews, the names

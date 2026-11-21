@@ -4,7 +4,8 @@ by line (a word heard wrong, a number, a sentence made up during a silence); not
 File `corrections.json` in the working folder of the video:
 {"lines": subtitles read, "done": how many of them were reviewed (an interrupted review goes on from there),
  "engine": name of the model, "corrections": [{id, line, start, end, original, corrected, reason, confidence, status}]}.
-`status`: "pending" until decided, then "accepted" or "rejected". `start` and `end` are the times of the first and last
+`status`: "pending" until decided, then "accepted" or "rejected"; `auto`: accepted without a question, because the
+project asked for it and the model said the fix sure (accept_sure). `start` and `end` are the times of the first and last
 word of the subtitle in `transcription.json`, which is never rewritten: an accepted correction replaces the words of
 that span in memory (`apply`, called by `pipeline.prepare` before the glossary and the segmentation), so it holds
 when the subtitles are cut again otherwise. An empty `corrected` removes the words (a sentence that was never said).
@@ -263,6 +264,38 @@ def decide(work: str | Path, decisions: list[dict]) -> tuple[int, int]:
     if yes or no:
         _write(Path(work), d)
     return yes, no
+
+
+def accept_sure(work: str | Path) -> int:
+    """The project asked for the sure fixes to be applied without a question (`review_auto`): accepts the corrections
+    waiting that the model says sure ("high"), marked `auto`. Never a removed line (a sentence said never said: nobody
+    would see it gone). The others stay waiting, not applied. Returns how many were accepted."""
+    d = load(work)
+    sure = [c for c in d["corrections"] if c.get("status") == "pending" and c.get("confidence") == "high"
+            and c.get("corrected") and c["corrected"] != c.get("original")]
+    for c in sure:
+        c["status"], c["auto"] = "accepted", True
+    if sure:
+        _write(Path(work), d)
+    return len(sure)
+
+
+def applied_alone(work: str | Path | None) -> list[dict]:
+    """The corrections applied without a question (see accept_sure), still applied."""
+    return [c for c in accepted(work) if c.get("auto")]
+
+
+def take_back(work: str | Path, ids: list[str]) -> int:
+    """Takes back corrections applied without a question: rejected, the line is its original again when the subtitles
+    are next cut. Returns how many were taken back."""
+    d = load(work)
+    wanted = set(ids)
+    back = [c for c in d["corrections"] if c["id"] in wanted and c.get("status") == "accepted" and c.get("auto")]
+    for c in back:
+        c["status"] = "rejected"
+    if back:
+        _write(Path(work), d)
+    return len(back)
 
 
 def _spread(piece: list[dict], tokens: list[str]) -> list[dict]:

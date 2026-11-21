@@ -308,8 +308,16 @@
   "other": "Full AI review: {n} lines to check"
  },
  "log.corrections_applied": {
-  "one": "AI review: {n} line fixed (validated by you)",
-  "other": "AI review: {n} lines fixed (validated by you)"
+  "one": "AI review: {n} line fixed (fix accepted)",
+  "other": "AI review: {n} lines fixed (fixes accepted)"
+ },
+ "log.review_auto": {
+  "one": "AI review: {n} sure fix applied without asking you, as the project asks (names: {names}, lines: {lines}).",
+  "other": "AI review: {n} sure fixes applied without asking you, as the project asks (names: {names}, lines: {lines})."
+ },
+ "log.review_auto_left": {
+  "one": "{n} less sure proposal is not applied: it stays to decide on the page, without stopping the video.",
+  "other": "{n} less sure proposals are not applied: they stay to decide on the page, without stopping the video."
  },
  "log.review_skipped": "AI review skipped: no model to review with (no translator configured, or the one chosen is gone).",
  "log.review_to_check": {
@@ -629,6 +637,16 @@
  "v2.review.subscription": "on your Claude Code subscription, nothing billed",
  "v2.review.change": "change the model",
  "v2.review.fold": "fold",
+ "v2.review.auto": "Apply the sure fixes without asking me",
+ "v2.review.auto_title": "For a video in a language you do not read, or a long project. The fixes the model calls sure (names and lines) are applied without stopping the project; never a removed line. The other proposals are not applied: they stay to decide above the videos, and the project does not wait for them. What was applied is listed there too, and each fix can be undone. Mind that it is the model that calls itself sure, and a small model is also wrong with confidence.",
+ "v2.applied.title": {
+  "one": "{n} fix applied without asking you",
+  "other": "{n} fixes applied without asking you"
+ },
+ "v2.applied.help": "Fixes the model called sure, applied because this project asks for it (AI review). \"Undo\" takes a fix back: the original text returns the next time the subtitles of the video are made (its menu, \"Subtitle again\": only the changed lines are translated again).",
+ "v2.applied.names": "Names, for the whole project",
+ "v2.applied.undo": "Undo",
+ "v2.applied.undo_label": "Undo this fix: {text}",
  "v2.tip.video_review": "The review of this video alone: for instance Full for a difficult episode, or None. The model is the project's.",
  "v2.sub.review_mode.none": "None",
  "v2.sub.review_mode.names": "The proper names",
@@ -676,9 +694,9 @@
  "v2.sub.estimating": "Estimating…",
  "v2.sub.translate": "Translate",
  "v2.sub.review_go": "Review, then translate",
- "v2.sub.no_more": "Do not ask me again before spending in this project",
- "v2.sub.spend_agreed": "No more asking before spending in this project (untick to be asked again)",
- "v2.sub.spend_agreed_title": "Without this box, a paid model (review, translation) never runs without your go-ahead, with its estimated cost, for each video or group of videos. Ticked, the costs of the next videos add up without another question; what the review proposes still waits for your decision.",
+ "v2.sub.no_more": "Do not ask me again before spending in this project, until the service stops",
+ "v2.sub.spend_agreed": "No more asking before spending in this project, until the service stops (untick to be asked again)",
+ "v2.sub.spend_agreed_title": "Without this box, a paid model (review, translation) never runs without your go-ahead, with its estimated cost, for each video or group of videos. Ticked, the costs of the next videos of this project add up without another question, until the service stops (a restart, or its own stop after a while without activity): opened again, the project asks again. What the review proposes still waits for your decision.",
  "v2.sub.names_title": {
   "one": "{n} name to check",
   "other": "{n} names to check"

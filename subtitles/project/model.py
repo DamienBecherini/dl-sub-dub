@@ -196,6 +196,7 @@ class Project:
     updated: str = ""
     status: str = ""                               # state of the last run: running, suspended, done, cancelled…
     ran: bool = False                              # a task or a download started once, even stopped since
+    launched: bool = False                         # Run pressed on the project once: paused since, it is resumed (rules)
 
     def __post_init__(self):
         self.stages = [s for s in STAGES if s in self.stages]          # always in the order they run
@@ -228,17 +229,20 @@ class Project:
 
     def to_dict(self) -> dict:
         return {"schema": SCHEMA, "id": self.id, "title": self.title, "folder": self.folder, "stages": list(self.stages),
-                "settings": self.settings, "created": self.created, "updated": self.updated, "status": self.status, "ran": self.ran,
+                "settings": {k: v for k, v in self.settings.items() if k not in self.SESSION_KEYS}, "created": self.created, "updated": self.updated, "status": self.status, "ran": self.ran,
+                "launched": self.launched,
                 "items": [i.to_dict() for i in self.items]}
 
     RUN_KEYS = ("ran", "gpu_released", "gpu_restore", "gpu_wait", "gpu_wait_items")
+    SESSION_KEYS = ("spend_agreed",)          # for this session only: never written (a restart of the service asks again)
 
     @classmethod
     def from_dict(cls, d: dict) -> "Project":
-        settings = dict(d.get("settings") or {})
+        settings = {k: v for k, v in (d.get("settings") or {}).items() if k not in cls.SESSION_KEYS}    # written by older versions
         old = {k: settings.pop(k) for k in cls.RUN_KEYS if k in settings}     # written among the settings by older versions
         project = cls(d["folder"], [Item.from_dict(i) for i in d.get("items") or []], settings,
                       [Stage(s) for s in d.get("stages", [Stage.SUBTITLES]) or [] if s in Stage.__members__.values()],
                       d.get("title") or "", d.get("id") or new_id(), d.get("created") or time.time(), d.get("updated") or "",
-                      d.get("status") or "", bool(d.get("ran") or old.get("ran")))
+                      d.get("status") or "", bool(d.get("ran") or old.get("ran")),
+                      bool(d["launched"]) if "launched" in d else bool(d.get("ran") or old.get("ran")))   # before: ran said it
         return project

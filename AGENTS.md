@@ -206,7 +206,9 @@ the right to use, and let them listen to the result.
 - The AI review, optional and off by default (Subtitles settings of a project; Settings, New projects, for the
   default): a model of the settings reads the transcription again before the translation and proposes fixes (the
   proper names, or every subtitle), which the user validates on the page. With a paid model the estimated cost is
-  shown first; a small local model finds fewer mistakes.
+  shown first; a small local model finds fewer mistakes. For videos in a language the user does not read, mention the
+  box "Apply the sure fixes without asking me" under the AI review of a project: only what the model says sure is
+  applied, never a removed line, and each fix applied can be undone on the page; advise a strong model for it.
 - Offer, without insisting, the application: the page in a window of its own, started from a shortcut, without a
   terminal (README "The page"). If the user wants it: `pip install ".[app]"`, then
   `<install folder>/.venv/bin/python -m subtitles.app --shortcut` (add `desktop` for a desktop shortcut too).

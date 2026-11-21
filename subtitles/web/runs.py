@@ -76,7 +76,7 @@ class ProjectRun:
         self.concurrency = 1                   # videos processed at once (several: translation by a remote API)
         self.active: list[Stage] | None = None # steps run now ("Run this step"); None: those ticked on the diagram
         self.card = CardShare()
-        self.review_stamp = 0                  # raised when proposals come from outside (an assistant): the page reads them again
+        self.review_stamp = 0                  # raised when proposals come from outside (an assistant) or sure fixes were applied without a question: the page reads them again
         self.held: set[str] = set()            # videos paused again after a go-ahead (the proposals of their AI review): they wait for the next one
         self.finishing: set[str] = set()       # videos at work when the project was paused "after the running videos": they end (see rules.alone)
         self.agreed: set[str] = set()          # videos that had the go-ahead of the project and wait for their turn (phase 2): not for the user (see rules.asks)
@@ -109,7 +109,8 @@ class ProjectRun:
 
     def subtitle_settings(self, cfg: dict | None = None) -> dict:
         """The settings of the Subtitles step as they will apply: the engines chosen, otherwise the active ones; whether a
-        free translation waits too (`pause`; a paid model always does, unless `spend_agreed`)."""
+        free translation waits too (`pause`; a paid model always does, unless `spend_agreed`); whether the sure fixes of
+        the AI review are applied without a question (`review_auto`)."""
         cfg = cfg if cfg is not None else config.load()
         s = self.settings(None, cfg)
         try:
@@ -123,7 +124,7 @@ class ProjectRun:
                 "languages": list(s["languages"] or []), "language": s["language"] or "",
                 "pause": s["pause"] is True, "review": review.mode(s["review"]), "review_engine": s["review_engine"] or "",
                 "reviewer": (reviewer or {}).get("id") or "", "reviewer_paid": bool(reviewer) and estimation.pause_by_default(reviewer),
-                "spend_agreed": bool(s["spend_agreed"]),
+                "review_auto": bool(s["review_auto"]), "spend_agreed": bool(s["spend_agreed"]),
                 "destination": dict(s["destination"])}
 
     def dubbing_settings(self, cfg: dict | None = None) -> dict:
@@ -168,8 +169,8 @@ class ProjectRun:
             return resolved[key]
         self.finishing &= {i.id for i in self.project.items if any(i.state(s) == S.RUNNING for s in i.stages)}     # ended: no longer
         self.agreed &= {i.id for i in self.project.items if i.state(Stage.SUBTITLES) == S.PAUSED}                  # taken: no longer
-        return rules.Context(of, available, str(self.state), self.started(), sharing, self.options.get("language") or "",
-                             frozenset(self.finishing), frozenset(self.agreed - self.held))
+        return rules.Context(of, available, str(self.state), self.started(), self.project.launched, sharing,
+                             self.options.get("language") or "", frozenset(self.finishing), frozenset(self.agreed - self.held))
 
     def follow_ticks(self):
         """The steps of the project are the ones ticked for at least one video (rules.ticked_steps), and how far the
@@ -404,6 +405,12 @@ class ProjectRun:
         todo = [i for i in self.items() if not i.facts.get("muxed") and S.ERROR not in (i.state(Stage.SUBTITLES), i.state(Stage.DUBBING))
                 and S.CANCELLED not in (i.state(Stage.SUBTITLES), i.state(Stage.DUBBING))]
         return round(sum(float(i.facts.get("duration") or 0) for i in todo) * (timing.known_rate(3, self.options) or 0))
+
+    def settle(self):
+        """A project waiting for the go-ahead where no video waits any more (decided, translated or cancelled on its own,
+        from its line) goes on: its go-ahead would accept nothing. The feeding ends the phase if nothing is left."""
+        if self.state == RunState.AWAITING_TRANSLATION and not rules.waiting(self.project):
+            self.state = RunState.RUNNING
 
     def end_phase(self):
         """Nothing more to start in the current phase."""

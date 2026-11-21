@@ -51,7 +51,8 @@ def test_folder_creates_a_project_and_runs_it_to_the_end(tmp_path, monkeypatch, 
     assert code == 0
     read_back = read(videos / store.FILE_NAME)
     assert read_back.project.status == "done" and [v["state"] for v in read_back.videos] == ["done", "done"]
-    assert read_back.options["spend_agreed"] is True and read_back.options["languages"] == ["fr", "de"]      # the command is the go-ahead
+    assert g.projects.all[read_back.id].options["spend_agreed"] is True       # the command is the go-ahead, for its run
+    assert "spend_agreed" not in read_back.options and read_back.options["languages"] == ["fr", "de"]   # not kept for the next one
     assert any("1/2 : a.mp4" in x for x in lines) and "finished: " in capsys.readouterr().out
 
 
@@ -67,7 +68,7 @@ def test_folder_with_existing_project_resumes_it(tmp_path, monkeypatch):
     assert folder_cli.run(str(videos), cfg, lambda _m: None, translator="claude", manager=g) == 0
     assert started == [b]                                     # the finished video is skipped
     read_back = read(videos / store.FILE_NAME)
-    assert read_back.id == old.id and read_back.options["translator"] == "claude" and read_back.options["spend_agreed"] is True
+    assert read_back.id == old.id and read_back.options["translator"] == "claude" and g.projects.all[old.id].options["spend_agreed"] is True
 
 
 def test_error_of_a_video_gives_exit_code_1(tmp_path, monkeypatch):

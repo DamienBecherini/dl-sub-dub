@@ -3,7 +3,7 @@
 import { GpuWait } from "./dubbing.js";
 import { useEffect, useState } from "/static/vendor/preact-htm.js";
 import { act, html, T, Tip } from "./lib.js";
-import { NamesPanel, TranslationPanel } from "./subtitles.js";
+import { AppliedPanel, NamesPanel, TranslationPanel } from "./subtitles.js";
 
 /* Step by step or video by video, with what each one means. */
 export function OrderChoice({ p }) {
@@ -37,6 +37,8 @@ export function OrderSwitch({ p, disabled = false }) {
 /* What waits for the user, above the videos. What the AI review proposes is decided first: while proposals wait, they
    are shown alone, and the go-ahead (a translation, a paid review) comes once they are decided: what is accepted applies
    before translating. "Later" shows the go-ahead at once, the proposals under it (nothing is fixed without a decision).
+   A project that applies the sure fixes without a question (review_auto) shows the go-ahead at once too: what is left
+   to decide is under it, and what was applied is listed last, where each fix can be taken back.
    The service says when the go-ahead is asked (p.rules.go_ahead): the project stopped for it, or it does not run and a
    video run on its own, from its line, waits. */
 export function Notices({ p }) {
@@ -45,12 +47,14 @@ export function Notices({ p }) {
   const goAhead = !!p?.rules.go_ahead;
   useEffect(() => { setLater(false); }, [p?.id, goAhead]);
   if (!p) return null;
-  const first = goAhead && !later;                        // the proposals come before the go-ahead
+  const alone = !!p.subtitles?.review_auto;               // the sure fixes are applied without a question: nothing to decide first
+  const first = goAhead && !later && !alone;              // the proposals come before the go-ahead
   const names = html`<${NamesPanel} p=${p} onCount=${setToDecide} onLater=${first ? () => setLater(true) : null} />`;
   return html`
     <${GpuWait} p=${p} />
     ${first && names}
-    ${goAhead && (later || toDecide === 0) && html`<${TranslationPanel} p=${p} undecided=${later && toDecide > 0} />`}
+    ${goAhead && (later || alone || toDecide === 0) && html`<${TranslationPanel} p=${p} undecided=${later && toDecide > 0} />`}
     ${!first && names}
+    <${AppliedPanel} p=${p} />
     ${p.blocked?.length > 0 && html`<p class="attention">${T("v2.project.blocked", { n: p.blocked.length })}</p>`}`;
 }

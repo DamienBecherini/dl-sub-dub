@@ -94,7 +94,7 @@ font que traduire une commande ou une requête HTTP en appels au gestionnaire.
 | `transcription.py`, `local_transcription.py` | Client du serveur de transcription (mots horodatés) ; serveur local lancé à la demande. |
 | `segmentation.py`, `formats.py` | Des mots aux sous-titres lisibles ; SRT et WebVTT. |
 | `review.py`, `glossary.py` | Relecture IA des noms propres, validée par l'utilisateur, commune au projet ; quelle relecture un projet demande (`review.mode`) et quel modèle relit (`review.engine` : n'importe quel traducteur). |
-| `corrections.py` | Relecture IA complète d'une vidéo : chaque sous-titre lu dans l'ordre, les lignes à corriger proposées (`review`), décidées (`decide`) et appliquées aux mots de la transcription en mémoire avant le découpage (`apply`) ; `corrections.json` dans le dossier de travail. |
+| `corrections.py` | Relecture IA complète d'une vidéo : chaque sous-titre lu dans l'ordre, les lignes à corriger proposées (`review`), décidées (`decide`) et appliquées aux mots de la transcription en mémoire avant le découpage (`apply`) ; `corrections.json` dans le dossier de travail. Les sûres acceptées sans question quand le projet le demande (`accept_sure`, comme `review.accept_sure` pour les noms), listées (`applied_alone`) et annulées (`take_back`). |
 | `translation.py`, `estimation.py` | Traduction par morceaux numérotés (modèle local, API Claude, Claude Code de la machine sur l'abonnement de l'utilisateur, API compatible OpenAI) ; coût avant de dépenser. |
 | `dubbing.py`, `dubbing_worker.py`, `muxing.py` | Doublage dans un environnement Python séparé (la référence de voix d'une phrase courte complétée seulement par des répliques de la même voix, `reference_lines`, reconnue par des vecteurs de locuteur sur au moins 0,5 s de voix, `speaker_bounds`) ; MKV multipiste, la pochette jointe. La voix séparée du fond (demucs) est faite une fois par vidéo, dans `dubbing/separation`, et partagée par les langues doublées ; elle part quand toutes les voix demandées sont faites (`dubbing.clear_temporary`). Chaque phrase générée est écrite aussitôt (`dubbing/sentences-<langue>`) : un doublage arrêté les reprend (voir [Arrêter, tout de suite](#arrêter-tout-de-suite)). |
 | `project/` | Le modèle de projet et la machine à états de ses étapes, ses réglages, ses étapes, les règles de ce qu'on peut faire maintenant, son fichier, et ce que fait un choix de l'utilisateur (`choices.py` : les étapes cochées avec ce dont elles ont besoin, jusqu'où va le travail, les réglages écrits comme le travail les attend ; ni disque, ni service). |
@@ -369,7 +369,10 @@ de ce texte serait perdue, même gratuite ; `TaskQueue.language_opinion` demande
 avant une relecture IA par un modèle
 payant (`review` : son estimation, `estimation.review`), quand la relecture propose des noms ou des lignes à décider
 (`validation`, pour les tâches à qui on a demandé de les attendre : `check_names`, mis pour chaque vidéo d'un
-projet), avant une traduction payante (`translation`, sauf si la tâche a déjà été reprise : l'estimation
+projet ; pas quand le projet a demandé d'appliquer sans question les corrections sûres, `review_auto` :
+`TaskQueue._fixes_alone` accepte les noms et les lignes que le modèle dit sûrs, marqués `auto`, jamais une ligne
+supprimée, laisse les autres à décider, et les sous-titres sont redécoupés dans le même passage), avant une
+traduction payante (`translation`, sauf si la tâche a déjà été reprise : l'estimation
 de la traduction s'affiche à chaque pause). `resume` lance son passage suivant, éventuellement avec un autre
 traducteur, un autre modèle de relecture, ou sans relecture. Une décision qui change les sous-titres (un nom, une
 ligne : `TaskQueue._seen`) les fait redécouper au passage suivant. Dans un projet, une vidéo de nouveau en pause après
@@ -479,7 +482,8 @@ Deux pages :
   Téléchargements, Mise en forme des sous-titres, Dossiers et nettoyage, Application) : une liste avec la valeur de
   chacune en une ligne, une page chacune (côte à côte sur un ordinateur), la page dans le # de l'adresse. Nouveaux
   projets écrit `[projects]` des réglages (ordre, Doublage coché, pause, relecture, MKV, MKV à la place de la vidéo),
-  la couche du bas de chaque projet (`project/settings.py`).
+  ce avec quoi un projet démarre : écrit dans le projet quand la page le crée (`project/settings.py`, `starting` ; la
+  route `POST /api/projects`), pour que le travail fasse ce que la page affiche.
 
 ```mermaid
 flowchart LR
@@ -659,6 +663,27 @@ Ce que leur écriture a appris : la page interdit `eval` (sa politique de sécur
 localisateur, pas avec un script donné en texte (`wait_for_function`, `evaluate`) ; une case de la page est cochée par
 le service (cliquer, puis attendre le service : `page_site.until`), et un test qui attend une erreur de la page (un
 projet que le service ne connaît plus : 404) la nomme dans `page.tolerated`.
+
+**Ce qui doit toujours tenir, quel que soit l'ordre des clics.** [`tests/test_invariants.py`](../tests/test_invariants.py)
+vérifie les invariants du comportement validés par l'auteur (aucun modèle payant sans accord, une vidéo qui attend peut
+toujours être débloquée, « Reprendre » seulement après une pause, l'état affiché dit la vérité, une vidéo continue
+d'elle-même une fois levé ce qu'elle attendait quand la suite est gratuite, le fichier dit ce que le service sait…)
+avec [Hypothesis](https://hypothesis.readthedocs.io/) en mode à états : il tire les réglages d'un projet et une suite
+de ce qu'un utilisateur fait sur la page (Lancer, une vidéo lancée depuis sa ligne, Pause, Arrêter, un accord, les
+noms décidés, une case, une annulation, un redémarrage du service), seulement ce que la page propose, sur le vrai
+service mené pas à pas, et vérifie chaque invariant après chaque action. Une suite qui en casse un est réduite à la
+plus courte qui le casse, et gardée dans `.hypothesis/` pour être réessayée en premier. 150 suites à chaque passage
+de la suite de tests ; plus pour chercher plus loin : `INVARIANTS_EXAMPLES=3000 pytest tests/test_invariants.py`.
+Écrit le 21/11/2026, il a trouvé dès son premier passage, entre autres, le « Reprendre » affiché après une vidéo
+lancée seule et le second accord demandé une fois les noms décidés.
+
+**Des tests eux-mêmes testés.** Les tests de mutation ([mutmut](https://github.com/boxed/mutmut)) changent le code un
+détail à la fois (un `and` devenu `or`, un test inversé, une valeur remplacée) et lancent les tests : un changement
+qu'aucun test ne remarque montre une règle que personne ne vérifie. Lancés sur `subtitles/project/rules.py` le
+21/11/2026, sous Linux (mutmut marche mal sous Windows), avec les tests de l'ordonnancement et des règles : 552
+changements sur 575 attrapés au départ, 572 après les tests qu'ils ont fait écrire ; les 3 restants ne changent rien
+qui puisse arriver (un message d'erreur comparé à « out of memory », une vidéo sans fichier qui n'est pas une
+adresse). Trop lents pour chaque push : à lancer à la main après un changement des règles.
 
 ## Par où commencer la lecture
 

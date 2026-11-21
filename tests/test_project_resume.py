@@ -7,6 +7,7 @@ from subtitles import config, pipeline
 from subtitles.web import tasks
 from helpers import Run, update
 from subtitles.web.manager import Manager
+from subtitles.web.runs import ProjectRun
 from subtitles.web.tasks import TaskQueue
 
 
@@ -120,6 +121,7 @@ def test_last_video_translated_alone_ends_the_project(tmp_path, monkeypatch):
     t.state = "done"
     update(run, 1, state="prepared", task=t.id)
     g.projects.task_changed(t)
+    g.projects.feed()                          # nothing else left: the work ends
     assert run.state == "done" and run.videos[1]["state"] == "done"
     assert last_project.offered(manager(tmp_path, monkeypatch).projects.all) is None
 
@@ -141,3 +143,19 @@ def test_loading_a_project_already_open_does_not_block(tmp_path, monkeypatch):
     thread.join(5)
     assert result and result[0].state == "suspended"
     assert last_project.offered(manager(tmp_path, monkeypatch).projects.all) is not None     # the reloaded project stays offered
+
+
+def test_do_not_ask_again_lasts_until_the_service_stops(tmp_path, monkeypatch):
+    """"Do not ask me again before spending" holds for this project while the service runs: it is not written in the
+    project file, so the project read again (a restart of the service) asks again. One written by an older version, too."""
+    g = manager(tmp_path, monkeypatch)
+    run = a_project(g, tmp_path, state="awaiting_translation")
+    assert g.projects.translate(run.id, "claude", ["fr"], review_choice={"spend_agreed": True})
+    assert run.options["spend_agreed"] is True and run.subtitle_settings()["spend_agreed"]      # asked no more meanwhile
+    run.save()
+    saved = json.loads(run.file.read_text(encoding="utf-8"))
+    assert "spend_agreed" not in saved["settings"] and saved["settings"]["translator"] == "claude"
+    assert not ProjectRun.from_file(run.file).options.get("spend_agreed")                         # restarted: asked again
+    saved["settings"]["spend_agreed"] = True                                                     # an older version kept it
+    run.file.write_text(json.dumps(saved), encoding="utf-8")
+    assert not ProjectRun.from_file(run.file).options.get("spend_agreed")

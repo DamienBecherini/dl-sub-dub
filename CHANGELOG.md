@@ -1,5 +1,46 @@
 # Changelog
 
+## 0.3.3 (2026-11-21)
+
+The sure fixes of the AI review applied without asking, for a language you do not read; a video goes on by itself
+once its names are decided; the choices of New projects followed by the work; and what must always hold tested
+whatever the order of the clicks, which found and fixed several defects of the flow.
+
+- The sure fixes of the AI review can be applied without asking, for a video in a language you do not read (you could
+  not judge the proposals) or a long project: the box "Apply the sure fixes without asking me", under the AI review of
+  a project, off by default (Settings, New projects, for the default). The names and the lines the model says sure
+  are accepted without stopping the project; never a removed line, nor a name the model could not identify. The other
+  proposals are not applied: they stay to decide and the project does not wait for them. What was applied is listed
+  above the videos with its reasons, and "Undo" takes a fix back. A paid model still asks for its cost first. Mind
+  that the confidence is what the model says of itself: a small local model is also wrong with confidence. API:
+  `review_auto` in the settings of a project, `applied` in `GET /api/projects/<id>/review`, `undo` in
+  `POST /api/projects/<id>/validate`.
+- The choices of Settings > New projects were shown on a new project but not followed by the work: the order "video by
+  video", the AI review and its model, the pause before a free translation, the dubbed track alone and the MKV in
+  place of the video (only the Dubbing box was). They are now written in the project when the page or an assistant
+  makes it, and the project does what it shows; a change of the Settings no longer changes what older projects show.
+- A video asked to be made again whose names or fixes were decided at its pause was transcribed a second time, and
+  the fixes just accepted were lost: its subtitles are now cut again from the transcription just made.
+- Once the names (or the lines) proposed by the AI review are decided, the video goes on by itself when what follows is
+  free. Before, it waited for a second click in the go-ahead panel, which also offered another model: in one project,
+  a video that stopped for its names could end translated by another model than the others. A paid translation, or the
+  pause asked before a free one, still asks first.
+- "Do not ask me again before spending in this project" now lasts until the service stops: it is not written in the
+  project any more, so a restart (or the stop of the service after a while without activity) asks again. The command
+  line still gives its go-ahead for its own run.
+- A go-ahead given for videos run on their own, from their line, gives the model chosen to these videos, not to the
+  whole project (the next videos of the project keep its translator).
+- The button at the bottom says "Resume" only on a project run then paused or stopped. A video run on its own, from its
+  line, no longer turns "Run" into "Resume", nor the state of the project into "paused".
+- Fixed: video by video, cancelling the video that waited for the go-ahead ended the project, the next videos never
+  done; a project waiting for the go-ahead after its last waiting video was translated from its line kept asking for a
+  go-ahead with nothing to accept; a finished project with a video ticked again said "done"; while a video ran on its
+  own, a project with another video waiting for the go-ahead said "in progress" next to the go-ahead panel.
+- What must always hold, whatever the order of the clicks, is tested (`tests/test_invariants.py`, Hypothesis): the
+  invariants validated (no paid model without a go-ahead, a video that waits can always be unblocked, "Resume" only
+  after a pause, the state shown tells the truth…), checked after each action of sequences of user actions drawn at
+  random, on the real service. It found the defects above.
+
 ## 0.3.2 (2026-11-20)
 
 A language the engine does not know is said before anything is spent on it, the spoken language is found among 25

@@ -71,7 +71,7 @@ def normalized(changes: dict) -> dict:
         changes = {**changes, "dub_language": codes or None}
     if "pause" in changes:                     # only "also before a free translation"; "never", of older versions, is gone
         changes = {**changes, "pause": True if changes["pause"] is True else None}
-    for key in ("mkv", "replace", "spend_agreed"):
+    for key in ("mkv", "replace", "spend_agreed", "review_auto"):
         if changes.get(key) is not None:
             changes = {**changes, key: bool(changes[key])}
     if changes.get("review") is not None:     # which AI review: none, the names, every subtitle (True: the names)

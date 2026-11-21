@@ -1,7 +1,7 @@
 """Validated glossary of a project: fixes badly transcribed names and guides their translation.
 
 File `subtitles.glossary.json` next to the project file: [{"transcribed", "spelling", "french"}], only the accepted
-entries. `transcription.json` is never rewritten: the fix applies to the words in memory, on the exact word.
+entries (`auto`: accepted without a question, see review.accept_sure). `transcription.json` is never rewritten: the fix applies to the words in memory, on the exact word.
 """
 import json
 import re
@@ -43,6 +43,18 @@ def add(file: str | Path, new_entries: list[dict]):
     tmp = file.with_name(file.name + ".tmp")
     tmp.write_text(json.dumps(sorted(entries, key=lambda e: e["transcribed"].lower()), ensure_ascii=False, indent=1), encoding="utf-8")
     tmp.replace(file)
+
+
+def remove(file: str | Path, transcribed: list[str]) -> int:
+    """Takes entries out (a name accepted without a question, taken back since). Returns how many were there."""
+    file = Path(file)
+    entries = load(file)
+    kept = [e for e in entries if e["transcribed"] not in set(transcribed)]
+    if len(kept) != len(entries):
+        tmp = file.with_name(file.name + ".tmp")
+        tmp.write_text(json.dumps(kept, ensure_ascii=False, indent=1), encoding="utf-8")
+        tmp.replace(file)
+    return len(entries) - len(kept)
 
 
 def _split(word: str) -> tuple[str, str, str]:

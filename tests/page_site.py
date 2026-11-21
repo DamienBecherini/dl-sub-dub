@@ -83,6 +83,8 @@ class Model:
             return s.spoken
         if schema is not None:                                         # an AI review: what the test prepared, else nothing to fix
             s.asked.append(("review", self.engine["id"]))
+            if "corrections" in schema["properties"]:                  # the full review: the lines of a video
+                return json.dumps({"corrections": s.lines.pop(0) if s.lines else []})
             return json.dumps({"entries": s.review.pop(0) if s.review else []})
         s.asked.append(("translation", self.engine["id"]))
         assert s.free.wait(30), "the test never let the translation go on"
@@ -102,7 +104,9 @@ class Studio:
         self.transcribed: list[str] = []                               # the videos sent to the transcription server
         self.downloaded: list[str] = []                                # the addresses downloaded
         self.dubbed: list[tuple[str, str]] = []                        # (video, language) for each voice made
-        self.review: list[list[dict]] = []                             # the answers of the model to the next AI reviews
+        self.order: list[str] = []                                     # "transcribed <video>", "dubbed <video>": the order of the work
+        self.review: list[list[dict]] = []                             # the answers of the model to the next AI reviews of the names
+        self.lines: list[list[dict]] = []                              # its answers to the next full reviews (the lines of a video)
         self.spoken = "ar"                                             # its answer to "which language is spoken?"
         self.failing = ""                                              # a message: the translation fails with it
         self.free = threading.Event()                                  # cleared by a test: the translation waits for it
@@ -150,6 +154,7 @@ class Studio:
     def transcribe(self, server_url, audio, language=None, timeout_s=0, key="", cancelled=lambda: False):
         said = self.said[Path(audio).parent.name]
         self.transcribed.append(Path(audio).parent.name)
+        self.order.append(f"transcribed {Path(audio).parent.name}")
         return {"words": words_of(said), "segments": [], "text": said, "language": ""}
 
     def describe(self, url, command):
@@ -168,6 +173,7 @@ class Studio:
 
     def dub(self, cfg, video, work, source_srt, target_srt, target, log=print, cancelled=lambda: False, redo=False, progress=None, phase=None):
         self.dubbed.append((Path(video).name, target))
+        self.order.append(f"dubbed {source.slug(Path(video).stem)}")
         output = steps.dubbing_file(work, target)
         output.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(self.small[1], output)

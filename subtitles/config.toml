@@ -142,6 +142,7 @@ order = "steps"                            # "steps" (every video through one st
 dubbing = false                            # the Dubbing step ticked
 review = ""                                # AI review before translating: "" (none), "names" (the proper names) or "full" (the names, then every subtitle)
 # review_engine = "claude"                 # id of the translator that reviews; absent: a Claude translator if there is one (Claude Code before the paid API), otherwise the project's
+# review_auto = true                       # the fixes the reviewing model says sure are applied without a question (never a removed line); the others stay to decide and the project does not wait for them
 replace = false                            # with the dubbing, the MKV replaces the original video (sent to the recycle bin)
 # pause = true                             # stop before a free translation too; a paid model (review, translation) always waits for your go-ahead
 # mkv = false                              # with the dubbing, the dubbed track alone; absent: an MKV with every track

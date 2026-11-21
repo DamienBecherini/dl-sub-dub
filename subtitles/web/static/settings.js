@@ -96,6 +96,7 @@ function fillSettings() {
   reviewer.replaceChildren(new Option(T("v2.sub.review_auto_plain"), ""),
     ...(c.translators || []).filter((m) => (m.type || "openai") !== "none").map((m) => new Option(m.name || m.id, m.id)));
   reviewer.value = [...reviewer.options].some((o) => o.value === pr.review_engine) ? pr.review_engine : "";
+  $("#cfg-proj-review-auto").checked = pr.review_auto === true;
   $("#cfg-proj-pause").value = pr.pause === true ? "on" : "";      // false, of older versions ("never"): a paid model always asks now
   $("#cfg-proj-mkv").checked = pr.mkv !== false; $("#cfg-proj-replace").checked = !!pr.replace;
   $("#cfg-dest-next-to").checked = c.destination?.next_to_video ?? true;
@@ -270,6 +271,7 @@ async function save() {
     c.projects = { ...(c.projects || {}), order: $("#cfg-proj-order-videos").checked ? "videos" : "steps", dubbing: $("#cfg-proj-dubbing").checked,
                    review: $("#cfg-proj-review").value, replace: $("#cfg-proj-replace").checked };
     if ($("#cfg-proj-review-engine").value) c.projects.review_engine = $("#cfg-proj-review-engine").value; else delete c.projects.review_engine;
+    if ($("#cfg-proj-review-auto").checked) c.projects.review_auto = true; else delete c.projects.review_auto;   // absent: every fix is decided
     if (pause === "on") c.projects.pause = true; else delete c.projects.pause;                 // absent: only before a paid model
     if ($("#cfg-proj-mkv").checked) delete c.projects.mkv; else c.projects.mkv = false;      // absent: the MKV
     c.destination = { next_to_video: $("#cfg-dest-next-to").checked, output_dir: $("#cfg-dest-output").checked };
